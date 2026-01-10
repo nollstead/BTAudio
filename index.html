@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BT Audio - Firmware Installer</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      text-align: center;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    .version {
+      color: #888;
+      margin-bottom: 30px;
+    }
+    .install-box {
+      background: #2a2a2a;
+      border-radius: 12px;
+      padding: 30px;
+      margin: 20px 0;
+    }
+    esp-web-install-button {
+      display: block;
+      margin: 20px 0;
+    }
+    button[slot="activate"] {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      font-size: 18px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button[slot="activate"]:hover {
+      background: #45a049;
+    }
+    .instructions {
+      text-align: left;
+      background: #2a2a2a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 30px;
+    }
+    .instructions h3 {
+      margin-top: 0;
+    }
+    .instructions ol {
+      padding-left: 20px;
+    }
+    .instructions li {
+      margin: 10px 0;
+    }
+    .note {
+      color: #888;
+      font-size: 14px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>BT Audio</h1>
+  <p class="version">Firmware v1.0.0</p>
+
+  <div class="install-box">
+    <p>Connect your device via USB and click the button below:</p>
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Install Firmware</button>
+      <span slot="unsupported">
+        Your browser doesn't support Web Serial.<br>
+        Please use Chrome or Edge.
+      </span>
+    </esp-web-install-button>
+  </div>
+
+  <div class="instructions">
+    <h3>Instructions</h3>
+    <ol>
+      <li>Connect your BT Audio device to your computer via USB</li>
+      <li>Click "Install Firmware" above</li>
+      <li>Select the correct serial port (usually "USB-SERIAL CH340")</li>
+      <li>Wait for the installation to complete</li>
+      <li>Your device will restart automatically</li>
+    </ol>
+    <p class="note">Note: You may need to hold the BOOT button on your device when connecting, or when prompted during installation.</p>
+  </div>
+</body>
+</html>
