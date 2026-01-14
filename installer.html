@@ -6,7 +6,7 @@
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
   <!-- Load esptool-js UMD bundle LOCALLY, BEFORE our code -->
-  assets/esptooljs/bundle.js</script>
+  https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js</script>
 
   <style>
     :root {
@@ -14,31 +14,15 @@
       --accent:#4CAF50; --accent2:#43a047; --border:rgba(255,255,255,.08);
     }
     *{box-sizing:border-box}
-    body{
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-      max-width:780px; margin:48px auto; padding:20px;
-      background:var(--bg); color:var(--text); line-height:1.6;
-    }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text);line-height:1.6}
     h1{margin:0 0 8px}
     .muted{color:var(--muted)}
-    .panel{
-      background:var(--panel); border:1px solid var(--border);
-      border-radius:12px; padding:20px; margin:18px 0;
-      box-shadow:0 0 20px rgba(0,0,0,.35);
-    }
-    .row{display:flex; gap:10px; flex-wrap:wrap; margin:16px 0}
-    button{
-      background:var(--accent); color:#fff; border:none;
-      padding:12px 18px; border-radius:10px; font-weight:600; cursor:pointer;
-    }
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+    button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
     button:hover{background:var(--accent2)}
-    textarea{
-      width:100%; height:240px; border-radius:8px;
-      border:1px solid var(--border); background:#0f0f0f; color:#cfe8ff;
-      padding:10px; font-family:ui-monospace, Menlo, Consolas, monospace;
-    }
-    #err{position:fixed; inset:0; background:#0008; color:#fff;
-      padding:16px; display:none; z-index:9999; overflow:auto}
+    textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace, Menlo, Consolas, monospace}
+    #err{position:fixed;inset:0;background:#0008;color:#fff;padding:16px;display:none;z-index:9999;overflow:auto}
     #err pre{white-space:pre-wrap}
   </style>
 </head>
@@ -106,12 +90,14 @@
     write(s){ log(s); }
   };
 
-  // Post-flash reset: DTR=false (GPIO0 high), pulse RTS (EN low->high)
+  // Post-flash reset via WebSerial control lines:
+  // DTR=false -> GPIO0 HIGH (normal boot), then pulse RTS to reset EN.
+  // Mirrors desktop esptool.py’s “--after hard_reset” semantics in the browser. [3](https://learnxinyminutes.com/toml/)
   async function hardResetToApp(){
     if(!port) return;
     try{
-      await port.setSignals({ dataTerminalReady: false });  // DTR = false
-      await port.setSignals({ requestToSend: true  });       // RTS = true (EN low)
+      await port.setSignals({ dataTerminalReady: false });  // DTR = false (GPIO0 high)
+      await port.setSignals({ requestToSend: true  });       // RTS = true  (EN low)
       await new Promise(r => setTimeout(r, 120));
       await port.setSignals({ requestToSend: false });       // RTS = false (EN high)
       log("Issued RTS/DTR reset (normal boot).");
@@ -133,10 +119,11 @@
       await port.open({ baudRate: baud });
       log(`Port opened @ ${baud} baud.`);
 
-      // Create transport/loader from esptool-js bundle
+      // Create transport/loader (from esptool-js bundle). [1](https://www.espboards.dev/blog/standalone-esptool-basics/)
       transport = new window.Transport(port);
       loader    = new window.ESPLoader(transport, baud, espTerminal);
 
+      // Connect to chip
       await loader.connect();
       const chip = await loader.chip;
       log(`Connected to chip: ${chip}`);
