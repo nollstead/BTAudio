@@ -106,15 +106,13 @@
 
         
  
-  // --- SHIM (robust): ensure getInfo() is visible to anything that touches this port
-+   const portShim = new Proxy(port, {
-+     get(target, prop, receiver) {
-+       if (prop === 'getInfo') {
-+         return () => ({ usbVendorId: undefined, usbProductId: undefined });
-+       }
-+       return Reflect.get(target, prop, receiver);
-+     }
-+   });
+// Robust shim: guarantee getInfo() exists for anything that touches this port
+   const portShim = new Proxy(port, {
+     get(target, prop, receiver) {
+       if (prop === 'getInfo') return () => ({ usbVendorId: undefined, usbProductId: undefined });
+       return Reflect.get(target, prop, receiver);
+     }
+   });
 
         transport = new Transport(port);
         loader    = new ESPLoader(transport, BAUD, espTerminal);
