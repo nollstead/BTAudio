@@ -4,7 +4,10 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nollstead Studio BTAudio – Custom Flasher (ESM, CDN)</title>
+  <title>Nollstead Studio BTAudio – Custom Flasher (Bundle)</title>
+
+  <!-- Standalone bundle (UMD) from CDN. Exposes window.ESPLoader & window.Transport -->
+  <script src="https://unpkg.com/esptool-js@0.5.6/bundle.js"></script>
 
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
@@ -29,139 +32,109 @@
       <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
       <button id="resetBtn"   disabled>3) Reset</button>
     </div>
-    <p class="muted">
-      If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.
-    </p>
+    <p class="muted">If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.</p>
   </div>
 
-  <div class="panel">
-    <h3>Log</h3>
-    <textarea id="log" readonly></textarea>
-  </div>
+  <div class="panel"><h3>Log</h3><textarea id="log" readonly></textarea></div>
 
-  <!-- One module script: imports esptool-js and wires the UI -->
-  <script type="module">
-    const logEl      = document.getElementById('log');
-    const connectBtn = document.getElementById('connectBtn');
-    const flashBtn   = document.getElementById('flashBtn');
-    const resetBtn   = document.getElementById('resetBtn');
+<script>
+(() => {
+  const logEl      = document.getElementById('log');
+  const connectBtn = document.getElementById('connectBtn');
+  const flashBtn   = document.getElementById('flashBtn');
+  const resetBtn   = document.getElementById('resetBtn');
 
-    let port = null;       // Web Serial port
-    let transport = null;  // esptool-js Transport
-    let loader = null;     // esptool-js ESPLoader
-    const BAUD = 460800;   // You can try 921600 later
+  let port = null, transport = null, loader = null;
+  const BAUD = 460800; // You can try 921600 later
 
-    const log = (msg, isErr=false) => {
-      const ts = new Date().toLocaleTimeString();
-      logEl.value += `[${ts}] ${msg}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
-      (isErr ? console.error : console.log)(msg);
-    };
+  const log = (m, e=false) => {
+    const ts = new Date().toLocaleTimeString();
+    logEl.value += `[${ts}] ${m}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+    (e ? console.error : console.log)(m);
+  };
 
-    // 1) Try to import the ES module from the CDN (official entry)
-    let ESPLoader, Transport;
-    try {
-      ({ ESPLoader, Transport } = await import('https://unpkg.com/esptool-js@0.5.6/lib/index.js'));
-      log("Installer script loaded (ESM). esptool-js imported.");
+  // Enable only if the bundle defined the globals
+  document.addEventListener('DOMContentLoaded', () => {
+    log("Installer script loaded (bundle).");
+    const ok = !!window.Transport && !!window.ESPLoader;
+    log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
+    connectBtn.disabled = !ok;
+    if (!ok) log("ERROR: esptool-js bundle not loaded. Check the <script src> URL (and network/CSP).", true);
+  });
+
+  // Minimal terminal for esptool-js
+  const espTerminal = { clean(){logEl.value=""}, writeLine(s){log(s)}, write(s){log(s)} };
+
+  // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse).
+  async function hardResetToApp(){
+    if(!port) return;
+    try{
+      await port.setSignals({ dataTerminalReady: false }); // DTR=false => GPIO0 HIGH
+      await port.setSignals({ requestToSend: true  });      // RTS=true  => EN low
+      await new Promise(r => setTimeout(r, 120));
+      await port.setSignals({ requestToSend: false });      // EN high
+      log("Issued RTS/DTR reset (normal boot).");
+    }catch(e){ log(`Reset sequence failed: ${e?.message || e}`, true); }
+  }
+
+  connectBtn.onclick = async () => {
+    log("Connect clicked.");
+    connectBtn.disabled = true;
+    try{
+      if(!('serial' in navigator)) throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
+      if(!window.Transport || !window.ESPLoader) throw new Error("esptool-js bundle not loaded.");
+
+      // Close lingering port if any
+      if (port && (port.readable || port.writable)) { try { await port.close(); } catch {} }
+
+      // User picks a port (user gesture)
+      port = await navigator.serial.requestPort({});
+      await port.open({ baudRate: BAUD });
+      log(`Port opened @ ${BAUD} baud.`);
+
+      transport = new window.Transport(port);
+      loader    = new window.ESPLoader(transport, BAUD, espTerminal);
+
+      await loader.connect();
+      const chip = await loader.chip;
+      log(`Connected to chip: ${chip}`);
+
+      flashBtn.disabled = false;
+      resetBtn.disabled = false;
+    }catch(e){
+      log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
+      if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
+        try { await port?.close(); } catch {}
+      }
       connectBtn.disabled = false;
-    } catch (e) {
-      log(`ERROR: Failed to import esptool-js module: ${e?.message || e}`, true);
-      // Bail: keep buttons disabled so users don’t click into a broken flow.
-      // If you want to continue with a local fallback later, we can add it here.
     }
+  };
 
-    // Minimal terminal for ESPLoader
-    const espTerminal = {
-      clean(){ logEl.value = ""; },
-      writeLine(s){ log(s); },
-      write(s){ log(s); }
-    };
+  flashBtn.onclick = async () => {
+    log("Flash clicked.");
+    flashBtn.disabled = true;
+    try{
+      const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
+      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      log(`Image size: ${buf.length} bytes`);
 
-    // RTS/DTR reset to boot the flashed app (GPIO0 high, EN pulse).
-    async function hardResetToApp(){
-      if(!port) return;
-      try{
-        await port.setSignals({ dataTerminalReady: false }); // DTR=false => GPIO0 HIGH
-        await port.setSignals({ requestToSend: true  });      // RTS=true  => EN low
-        await new Promise(r => setTimeout(r, 120));
-        await port.setSignals({ requestToSend: false });      // EN high
-        log("Issued RTS/DTR reset (normal boot).");
-      }catch(e){
-        log(`Reset sequence failed: ${e?.message || e}`, true);
-      }
-    }
+      log("Erasing…");
+      await loader.eraseFlash();
 
-    connectBtn.onclick = async () => {
-      log("Connect clicked.");
-      connectBtn.disabled = true; // prevent double-click reentry
-      try{
-        if(!('serial' in navigator)){
-          throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
-        }
+      log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
+      await loader.writeFlash(0x000000, buf);
 
-        // Close lingering port if any
-        if (port && (port.readable || port.writable)) {
-          try { await port.close(); } catch {}
-        }
-
-        // User picks a port (user gesture required for Web Serial)
-        port = await navigator.serial.requestPort({});
-        await port.open({ baudRate: BAUD }); // open throws if already open/invalid
-        log(`Port opened @ ${BAUD} baud.`);
-
-        transport = new Transport(port);
-        loader    = new ESPLoader(transport, BAUD, espTerminal);
-
-        await loader.connect();
-        const chip = await loader.chip;
-        log(`Connected to chip: ${chip}`);
-
-        flashBtn.disabled = false;
-        resetBtn.disabled = false;
-      }catch(e){
-        log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
-
-        // If invalid state/already open, try to close and re-enable
-        if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
-          try { await port?.close(); } catch {}
-        }
-        connectBtn.disabled = false;
-      }
-    };
-
-    flashBtn.onclick = async () => {
-      log("Flash clicked.");
-      flashBtn.disabled = true;
-      try{
-        const url = "webflash/UTAudio.bin";
-        log("Downloading " + url + " …");
-        const resp = await fetch(url, { cache: "no-cache" });
-        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const buf = new Uint8Array(await resp.arrayBuffer());
-        log(`Image size: ${buf.length} bytes`);
-
-        // Full erase (comment out to speed incremental updates)
-        log("Erasing…");
-        await loader.eraseFlash();
-
-        // Write merged image at 0x000000
-        log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
-        await loader.writeFlash(0x000000, buf);
-
-        log("Flash complete. Wrapping up…");
-        await hardResetToApp();
-        log("Done.");
-      }catch(e){
-        log(`Flash failed: ${e?.message || e}`, true);
-      }finally{
-        flashBtn.disabled = false;
-      }
-    };
-
-    resetBtn.onclick = async () => {
-      log("Reset clicked.");
+      log("Flash complete. Wrapping up…");
       await hardResetToApp();
-    };
-  </script>
+      log("Done.");
+    }catch(e){ log(`Flash failed: ${e?.message || e}`, true); }
+    finally{ flashBtn.disabled = false; }
+  };
+
+  resetBtn.onclick = async () => { log("Reset clicked."); await hardResetToApp(); };
+})();
+</script>
 </body>
 </html>
