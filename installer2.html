@@ -104,14 +104,18 @@
       await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
       log(`Port opened @ ${BAUD} baud.`);
 
-      // Robust shim: guarantee getInfo() exists for anything that touches this port
-      const portShim = new Proxy(port, {
-        get(target, prop, receiver) {
-          if (prop === 'getInfo') return () => ({ usbVendorId: undefined, usbProductId: undefined });
-          return Reflect.get(target, prop, receiver);
+            
+      /// Robust shim: guarantee getInfo() exists AND keep the same prototype/shape as the real port
+      const portShim = Object.assign(
+        Object.create(Object.getPrototypeOf(port)),
+        port,
+        {
+          getInfo: typeof port.getInfo === 'function'
+            ? port.getInfo.bind(port)
+            : () => ({ usbVendorId: undefined, usbProductId: undefined })
         }
-      });
-
+      );
+      
       transport = new Transport(portShim);
       loader    = new ESPLoader(transport, BAUD, espTerminal);
 
