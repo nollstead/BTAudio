@@ -2,97 +2,22 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Check esptool-js bundle</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Roboto, "Segoe UI", Arial; padding: 1rem; }
-    pre { background:#f6f8fa; padding: .5rem; overflow:auto; }
-    .ok { color: green }
-    .err { color: red }
-  </style>
+  <title>Check esptool-js (module)</title>
 </head>
 <body>
-  <h1>esptool-js load diagnostic</h1>
-  <p id="status">Starting...</p>
+  <script type="module">
+    import * as esptool from 'https://unpkg.com/esptool-js@0.5.6/bundle.js';
 
-  <h2>UMD load attempt (script tag)</h2>
-  <pre id="umd-output"></pre>
+    // Use exports directly:
+    document.body.textContent =
+      'Transport=' + !!esptool.Transport + ', ESPLoader=' + !!esptool.ESPLoader;
 
-  <h2>ESM import attempt (dynamic import)</h2>
-  <pre id="esm-output"></pre>
+    // Or, if other non-module code expects globals, expose them:
+    window.Transport = esptool.Transport;
+    window.ESPLoader = esptool.ESPLoader;
 
-  <script>
-  (function(){
-    const outputUMD = document.getElementById('umd-output');
-    const outputESM = document.getElementById('esm-output');
-    const status = document.getElementById('status');
-
-    function pretty(obj) { try { return JSON.stringify(obj, null, 2); } catch(e) { return String(obj); } }
-
-    // Snapshot of window keys before loading
-    const before = new Set(Object.getOwnPropertyNames(window));
-
-    const src = "https://unpkg.com/esptool-js@0.5.6/bundle.js";
-
-    // Create script tag (UMD style) and attach handlers
-    const s = document.createElement('script');
-    s.src = src;
-    s.async = true;
-
-    s.onload = function() {
-      const after = Object.getOwnPropertyNames(window);
-      const added = after.filter(k => !before.has(k)).sort();
-      let report = [];
-      report.push("Script loaded (onload triggered).");
-      report.push("New globals added (diff):");
-      report.push(pretty(added));
-      // Show a few likely names and their types/values
-      ['Transport','ESPLoader','esptool','EspTool','ESP','esptool_js','ESPTool'].forEach(name => {
-        if (name in window) {
-          try { report.push(name + " => " + (typeof window[name]) + " : " + (window[name] && window[name].constructor && window[name].constructor.name || String(window[name]))); }
-          catch(e){ report.push(name + " => (error reading)"); }
-        } else {
-          report.push(name + " => (not on window)");
-        }
-      });
-      outputUMD.textContent = report.join("\n\n");
-      status.textContent = "UMD load completed — see results below.";
-    };
-
-    s.onerror = function(ev) {
-      outputUMD.textContent = "Script failed to load. Check Network/Console for details.\nError event: " + pretty(ev);
-      status.textContent = "UMD load failed.";
-      outputUMD.classList.add('err');
-    };
-
-    document.head.appendChild(s);
-
-    // After a short delay (so UMD attempt has a chance), try dynamic import as ESM
-    setTimeout(async () => {
-      try {
-        status.textContent = "Attempting dynamic import (ESM) as fallback...";
-        // dynamic import; note: this will fail if server doesn't serve as module or CORS blocks it
-        const mod = await import(src);
-        // show top-level keys of the module and some likely exports
-        const modKeys = Object.keys(mod).sort();
-        const report = [];
-        report.push("Dynamic import succeeded.");
-        report.push("Module keys: " + pretty(modKeys));
-        ['Transport','ESPLoader','default'].forEach(k => {
-          report.push(k + " => " + (k in mod ? (typeof mod[k] + " / " + (mod[k] && mod[k].constructor && mod[k].constructor.name || String(mod[k]))) : "(not exported)"));
-        });
-        // also attach module for interactive inspection
-        window.__esptool_module = mod;
-        report.push("\nmodule attached to window.__esptool_module for console inspection.");
-        outputESM.textContent = report.join("\n\n");
-        status.textContent = "ESM import completed.";
-        outputESM.classList.add('ok');
-      } catch (err) {
-        outputESM.textContent = "Dynamic import failed: " + String(err) + "\n\nSee console and Network tab for details.";
-        status.textContent = "ESM import failed.";
-        outputESM.classList.add('err');
-      }
-    }, 800);
-  })();
+    // Keep module available for debugging:
+    window.__esptool_module = esptool;
   </script>
 </body>
 </html>
