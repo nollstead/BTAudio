@@ -1,97 +1,129 @@
-<!DOCTYPE html>
+
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BT Audio - Firmware Installer</title>
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BT Audio – Firmware Update</title>
+
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 600px;
+      max-width: 700px;
       margin: 50px auto;
       padding: 20px;
       text-align: center;
-      background: #1a1a1a;
-      color: #fff;
+      background: #121212;
+      color: #eaeaea;
+      line-height: 1.6;
     }
+
     h1 {
       margin-bottom: 10px;
+      color: #fff;
     }
+
     .version {
-      color: #888;
+      color: #bbb;
+      margin-top: -10px;
       margin-bottom: 30px;
     }
-    .install-box {
-      background: #2a2a2a;
-      border-radius: 12px;
+
+    .flash-box {
+      background: #1e1e1e;
+      border-radius: 14px;
       padding: 30px;
-      margin: 20px 0;
+      margin: 30px 0;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
     }
-    esp-web-install-button {
-      display: block;
-      margin: 20px 0;
-    }
-    button[slot="activate"] {
+
+    a.flash-btn {
+      display: inline-block;
+      padding: 15px 40px;
       background: #4CAF50;
       color: white;
-      border: none;
-      padding: 15px 40px;
-      font-size: 18px;
-      border-radius: 8px;
-      cursor: pointer;
+      text-decoration: none;
+      border-radius: 10px;
+      font-size: 20px;
+      font-weight: 600;
+      transition: background 0.15s ease-in-out;
     }
-    button[slot="activate"]:hover {
-      background: #45a049;
+    a.flash-btn:hover {
+      background: #43a047;
     }
+
     .instructions {
+      background: #1e1e1e;
+      border-radius: 14px;
+      padding: 25px;
+      margin-top: 35px;
       text-align: left;
-      background: #2a2a2a;
-      border-radius: 12px;
-      padding: 20px;
-      margin-top: 30px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
     }
+
     .instructions h3 {
       margin-top: 0;
+      font-size: 1.3rem;
+      color: #fff;
     }
+
     .instructions ol {
-      padding-left: 20px;
+      padding-left: 22px;
+      color: #ddd;
     }
+
     .instructions li {
       margin: 10px 0;
+      font-size: 1rem;
     }
+
     .note {
-      color: #888;
-      font-size: 14px;
       margin-top: 20px;
+      color: #999;
+      font-size: 0.9rem;
+    }
+
+    .footer {
+      margin-top: 40px;
+      color: #666;
+      font-size: 0.9rem;
     }
   </style>
 </head>
-<body>
-  <h1>BT Audio</h1>
-  <p class="version">Firmware v1.0.0</p>
 
-  <div class="install-box">
-    <p>Connect your device via USB and click the button below:</p>
-    <esp-web-install-button manifest="manifest.json">
-      <button slot="activate">Install Firmware</button>
-      <span slot="unsupported">
-        Your browser doesn't support Web Serial.<br>
-        Please use Chrome or Edge.
-      </span>
-    </esp-web-install-button>
+<body>
+  <h1>BT Audio Firmware Update</h1>
+  <p class="version">Firmware: <strong>UTAudio.bin</strong></p>
+
+  <div class="flash-box">
+    <p>Click the button below to launch the official Espressif web flasher:</p>
+
+    <a class="flash-btn"
+       href="https://espressif.github.io/esp-launchpad/?flashConfigURL=https://nollstead.github.io/BTAudio/launchpad.toml">
+       Open ESP Launchpad
+    </a>
   </div>
 
   <div class="instructions">
     <h3>Instructions</h3>
     <ol>
-      <li>Connect your BT Audio device to your computer via USB</li>
-      <li>Click "Install Firmware" above</li>
-      <li>Select the correct serial port (usually "USB-SERIAL CH340")</li>
-      <li>Wait for the installation to complete</li>
-      <li>Your device will restart automatically</li>
+      <li>Connect your BT Audio device to your computer via USB.</li>
+      <li>Click <strong>Open ESP Launchpad</strong> above.</li>
+      <li>Select the serial port (e.g., “USB‑SERIAL CH340”).</li>
+      <li>Choose the firmware version shown in Launchpad.</li>
+      <li>Click <strong>Flash</strong> and wait for completion.</li>
+      <li>Your device will restart automatically.</li>
     </ol>
-    <p class="note">Note: You may need to hold the BOOT button on your device when connecting, or when prompted during installation.</p>
+
+    <p class="note">
+      Note: If your device doesn’t auto‑enter flash mode, press and hold the BOOT button while connecting, 
+      or when prompted during flashing.
+    </p>
   </div>
+
+  <p class="footer">
+    Hosted on GitHub Pages • 
+    <a href="https://github.com/nollstead/BTAudio" style="color: #888">View Repository</a>
+  </p>
 </body>
 </html>
