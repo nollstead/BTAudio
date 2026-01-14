@@ -6,7 +6,7 @@
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
   <!-- Load esptool-js UMD bundle LOCALLY, BEFORE our code -->
-  <script src="assets/esptooljs/bundle.js"></script>
+  assets/esptooljs/bundle.js</script>
 
   <style>
     :root {
@@ -106,14 +106,12 @@
     write(s){ log(s); }
   };
 
-  // Post-flash reset via WebSerial control lines:
-  // DTR=false -> GPIO0 HIGH (normal boot), then pulse RTS to reset EN.
-  // Mirrors desktop esptool.py’s “--after hard_reset” semantics in the browser. [2](https://docs.sparkfun.com/SparkFun_Thing_Plus_ESP32_WROOM_C/single_page/)
+  // Post-flash reset: DTR=false (GPIO0 high), pulse RTS (EN low->high)
   async function hardResetToApp(){
     if(!port) return;
     try{
-      await port.setSignals({ dataTerminalReady: false });  // DTR = false (GPIO0 high)
-      await port.setSignals({ requestToSend: true  });       // RTS = true  (EN low)
+      await port.setSignals({ dataTerminalReady: false });  // DTR = false
+      await port.setSignals({ requestToSend: true  });       // RTS = true (EN low)
       await new Promise(r => setTimeout(r, 120));
       await port.setSignals({ requestToSend: false });       // RTS = false (EN high)
       log("Issued RTS/DTR reset (normal boot).");
@@ -135,11 +133,10 @@
       await port.open({ baudRate: baud });
       log(`Port opened @ ${baud} baud.`);
 
-      // Create transport/loader (from esptool-js bundle). [1](https://www.digikey.com/en/maker/projects/esp32-thing-plus-usbc-hookup-guide/c210558437a9446ebfabdd1ceaebab38)
+      // Create transport/loader from esptool-js bundle
       transport = new window.Transport(port);
       loader    = new window.ESPLoader(transport, baud, espTerminal);
 
-      // Connect to chip
       await loader.connect();
       const chip = await loader.chip;
       log(`Connected to chip: ${chip}`);
