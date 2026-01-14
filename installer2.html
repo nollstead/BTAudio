@@ -4,10 +4,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nollstead Studio BTAudio – Custom Flasher (Bundle)</title>
-
-  <!-- Standalone bundle (UMD) from CDN. Exposes window.ESPLoader & window.Transport -->
-  <script src="https://unpkg.com/esptool-js@0.5.6/bundle.js"></script>
+  <title>Nollstead Studio BTAudio – Custom Flasher (Bundle-as-Module)</title>
 
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
@@ -21,6 +18,22 @@
     button:hover:not([disabled]){background:var(--accent2)}
     textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
   </style>
+
+  <!-- 1) Import the CDN bundle as an ES module and expose globals -->
+  <script type="module">
+    try {
+      const esptool = await import('https://unpkg.com/esptool-js@0.5.6/bundle.js');
+      // Expose globals so existing non-module code works:
+      window.Transport = esptool.Transport;
+      window.ESPLoader = esptool.ESPLoader;
+      window.__esptool_module = esptool; // optional, for debugging
+    } catch (e) {
+      console.error('Failed to import esptool-js bundle as module:', e);
+      // If your network blocks unpkg, you can host the bundle locally and swap the URL:
+      // const esptool = await import('/BTAudio/assets/esptooljs/bundle.js');
+      // window.Transport = esptool.Transport; window.ESPLoader = esptool.ESPLoader;
+    }
+  </script>
 </head>
 <body>
   <h1>BTAudio – Custom Web Flasher</h1>
@@ -32,109 +45,117 @@
       <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
       <button id="resetBtn"   disabled>3) Reset</button>
     </div>
-    <p class="muted">If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.</p>
+    <p class="muted">
+      If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.
+    </p>
   </div>
 
-  <div class="panel"><h3>Log</h3><textarea id="log" readonly></textarea></div>
+  <div class="panel">
+    <h3>Log</h3>
+    <textarea id="log" readonly></textarea>
+  </div>
 
-<script>
-(() => {
-  const logEl      = document.getElementById('log');
-  const connectBtn = document.getElementById('connectBtn');
-  const flashBtn   = document.getElementById('flashBtn');
-  const resetBtn   = document.getElementById('resetBtn');
+  <!-- 2) Your app logic: relies on the globals we just set -->
+  <script>
+  (() => {
+    const logEl      = document.getElementById('log');
+    const connectBtn = document.getElementById('connectBtn');
+    const flashBtn   = document.getElementById('flashBtn');
+    const resetBtn   = document.getElementById('resetBtn');
 
-  let port = null, transport = null, loader = null;
-  const BAUD = 460800; // You can try 921600 later
+    let port = null, transport = null, loader = null;
+    const BAUD = 460800; // You can try 921600 later
 
-  const log = (m, e=false) => {
-    const ts = new Date().toLocaleTimeString();
-    logEl.value += `[${ts}] ${m}\n`;
-    logEl.scrollTop = logEl.scrollHeight;
-    (e ? console.error : console.log)(m);
-  };
+    const log = (m, e=false) => {
+      const ts = new Date().toLocaleTimeString();
+      logEl.value += `[${ts}] ${m}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      (e ? console.error : console.log)(m);
+    };
 
-  // Enable only if the bundle defined the globals
-  document.addEventListener('DOMContentLoaded', () => {
-    log("Installer script loaded (bundle).");
-    const ok = !!window.Transport && !!window.ESPLoader;
-    log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
-    connectBtn.disabled = !ok;
-    if (!ok) log("ERROR: esptool-js bundle not loaded. Check the <script src> URL (and network/CSP).", true);
-  });
+    // Enable Connect once the module has exposed globals
+    document.addEventListener('DOMContentLoaded', () => {
+      const ok = !!window.Transport && !!window.ESPLoader;
+      log("Installer script loaded (bundle-as-module).");
+      log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
+      connectBtn.disabled = !ok;
+      if (!ok) log("ERROR: esptool-js bundle not imported. Check network/CSP or switch to local URL.", true);
+    });
 
-  // Minimal terminal for esptool-js
-  const espTerminal = { clean(){logEl.value=""}, writeLine(s){log(s)}, write(s){log(s)} };
+    // Minimal terminal for esptool-js
+    const espTerminal = { clean(){logEl.value=""}, writeLine(s){log(s)}, write(s){log(s)} };
 
-  // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse).
-  async function hardResetToApp(){
-    if(!port) return;
-    try{
-      await port.setSignals({ dataTerminalReady: false }); // DTR=false => GPIO0 HIGH
-      await port.setSignals({ requestToSend: true  });      // RTS=true  => EN low
-      await new Promise(r => setTimeout(r, 120));
-      await port.setSignals({ requestToSend: false });      // EN high
-      log("Issued RTS/DTR reset (normal boot).");
-    }catch(e){ log(`Reset sequence failed: ${e?.message || e}`, true); }
-  }
-
-  connectBtn.onclick = async () => {
-    log("Connect clicked.");
-    connectBtn.disabled = true;
-    try{
-      if(!('serial' in navigator)) throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
-      if(!window.Transport || !window.ESPLoader) throw new Error("esptool-js bundle not loaded.");
-
-      // Close lingering port if any
-      if (port && (port.readable || port.writable)) { try { await port.close(); } catch {} }
-
-      // User picks a port (user gesture)
-      port = await navigator.serial.requestPort({});
-      await port.open({ baudRate: BAUD });
-      log(`Port opened @ ${BAUD} baud.`);
-
-      transport = new window.Transport(port);
-      loader    = new window.ESPLoader(transport, BAUD, espTerminal);
-
-      await loader.connect();
-      const chip = await loader.chip;
-      log(`Connected to chip: ${chip}`);
-
-      flashBtn.disabled = false;
-      resetBtn.disabled = false;
-    }catch(e){
-      log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
-      if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
-        try { await port?.close(); } catch {}
-      }
-      connectBtn.disabled = false;
+    // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse)
+    async function hardResetToApp(){
+      if(!port) return;
+      try{
+        await port.setSignals({ dataTerminalReady: false }); // DTR=false => GPIO0 HIGH
+        await port.setSignals({ requestToSend: true  });      // RTS=true  => EN low
+        await new Promise(r => setTimeout(r, 120));
+        await port.setSignals({ requestToSend: false });      // EN high
+        log("Issued RTS/DTR reset (normal boot).");
+      }catch(e){ log(`Reset sequence failed: ${e?.message || e}`, true); }
     }
-  };
 
-  flashBtn.onclick = async () => {
-    log("Flash clicked.");
-    flashBtn.disabled = true;
-    try{
-      const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
-      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const buf = new Uint8Array(await resp.arrayBuffer());
-      log(`Image size: ${buf.length} bytes`);
+    connectBtn.onclick = async () => {
+      log("Connect clicked.");
+      connectBtn.disabled = true;
+      try{
+        if(!('serial' in navigator)){
+          throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
+        }
+        if(!window.Transport || !window.ESPLoader){
+          throw new Error("esptool-js not ready (globals missing).");
+        }
 
-      log("Erasing…");
-      await loader.eraseFlash();
+        // Close lingering port if any
+        if (port && (port.readable || port.writable)) { try { await port.close(); } catch {} }
 
-      log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
-      await loader.writeFlash(0x000000, buf);
+        // User picks a port (user gesture)
+        port = await navigator.serial.requestPort({});
+        await port.open({ baudRate: BAUD });
+        log(`Port opened @ ${BAUD} baud.`);
 
-      log("Flash complete. Wrapping up…");
-      await hardResetToApp();
-      log("Done.");
-    }catch(e){ log(`Flash failed: ${e?.message || e}`, true); }
-    finally{ flashBtn.disabled = false; }
-  };
+        transport = new window.Transport(port);
+        loader    = new window.ESPLoader(transport, BAUD, espTerminal);
 
-  resetBtn.onclick = async () => { log("Reset clicked."); await hardResetToApp(); };
-})();
-</script>
+        await loader.connect();
+        const chip = await loader.chip;
+        log(`Connected to chip: ${chip}`);
+
+        flashBtn.disabled = false;
+        resetBtn.disabled = false;
+      }catch(e){
+        log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
+        if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) { try { await port?.close(); } catch {} }
+        connectBtn.disabled = false;
+      }
+    };
+
+    flashBtn.onclick = async () => {
+      log("Flash clicked.");
+      flashBtn.disabled = true;
+      try{
+        const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
+        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        log(`Image size: ${buf.length} bytes`);
+
+        log("Erasing…");
+        await loader.eraseFlash();
+
+        log("Writing flash @ 0x000000 … (~30–90s for ~1MB images)");
+        await loader.writeFlash(0x000000, buf);
+
+        log("Flash complete. Wrapping up…");
+        await hardResetToApp();
+        log("Done.");
+      }catch(e){ log(`Flash failed: ${e?.message || e}`, true); }
+      finally{ flashBtn.disabled = false; }
+    };
+
+    resetBtn.onclick = async () => { log("Reset clicked."); await hardResetToApp(); };
+  })();
+  </script>
 </body>
 </html>
