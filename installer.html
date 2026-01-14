@@ -5,28 +5,36 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
-  <!-- Load esptool-js UMD bundle from YOUR site (must be before any other scripts) -->
+  <!-- Load esptool-js as a module and expose a readiness promise on window.esptoolReady -->
   <script type="module">
-  (async () => {
+  // window.esptoolReady resolves to true when Transport + ESPLoader are available,
+  // or false if loading failed (or fallback failed).
+  window.esptoolReady = new Promise(async (resolve) => {
     const url = "https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js";
     try {
       const mod = await import(url);
-      // mod may export named exports or have a default that contains the exports.
       const maybe = mod.default ?? mod;
-      // Try to map the exports the page expects
-      window.Transport = mod.Transport ?? maybe.Transport ?? maybe.Transport ?? maybe;
-      window.ESPLoader  = mod.ESPLoader  ?? maybe.ESPLoader  ?? maybe.ESPLoader  ?? maybe;
+      // Map common export shapes to the globals the page expects
+      window.Transport  = mod.Transport  ?? maybe.Transport  ?? maybe.Transport ?? maybe;
+      window.ESPLoader  = mod.ESPLoader  ?? maybe.ESPLoader  ?? maybe.ESPLoader ?? maybe;
       console.log("esptool-js module imported:", { Transport: !!window.Transport, ESPLoader: !!window.ESPLoader });
+      resolve(!!window.Transport && !!window.ESPLoader);
     } catch (err) {
-      console.error("Failed to import esptool-js bundle as module:", err);
-      // Optionally fall back to injecting a classic script tag (will still fail if file is ESM)
+      console.error("ES module import failed:", err);
+      // Try injecting as a classic script as a fallback (may still fail if file is ESM or CORS blocked)
       const s = document.createElement('script');
       s.src = url;
-      s.onload = () => console.log("Fallback script loaded (classic).");
-      s.onerror = (e) => console.error("Fallback classic script failed:", e);
+      s.onload = () => {
+        console.log("Fallback classic script loaded:", { Transport: !!window.Transport, ESPLoader: !!window.ESPLoader });
+        resolve(!!window.Transport && !!window.ESPLoader);
+      };
+      s.onerror = (e) => {
+        console.error("Fallback classic script failed:", e);
+        resolve(false);
+      };
       document.head.appendChild(s);
     }
-  })();
+  });
   </script>
 
   <style>
@@ -76,11 +84,23 @@
   }
 
   // Enable Connect only if the bundle defined the globals we need
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     log("Installer script loaded.");
-    log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
-    if (window.Transport && window.ESPLoader) connectBtn.disabled = false;
-    else log("ERROR: esptool-js bundle not loaded. Check the <script src> URL in <head>.");
+    // Wait for esptoolReady, but don't wait forever — use a short timeout (5s)
+    try {
+      const ok = await Promise.race([
+        window.esptoolReady ?? Promise.resolve(false),
+        new Promise(resolve => setTimeout(() => resolve(false), 5000))
+      ]);
+      log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
+      if (ok && window.Transport && window.ESPLoader) {
+        connectBtn.disabled = false;
+      } else {
+        log("ERROR: esptool-js bundle not loaded. Check the <script src> URL in <head>.");
+      }
+    } catch (e) {
+      log("ERROR waiting for esptool bundle: " + (e && e.message ? e.message : e));
+    }
   });
 
   const espTerminal = { clean(){logEl.value=""}, writeLine(s){log(s)}, write(s){log(s)} };
