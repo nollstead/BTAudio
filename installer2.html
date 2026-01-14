@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nollstead Studio BTAudio – Custom Flasher (ESM)</title>
+  <title>Nollstead Studio BTAudio – Custom Flasher (ESM, CDN)</title>
 
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
@@ -14,7 +14,8 @@
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
-    button[disabled]{opacity:.55;cursor:not-allowed}button:hover:not([disabled]){background:var(--accent2)}
+    button[disabled]{opacity:.55;cursor:not-allowed}
+    button:hover:not([disabled]){background:var(--accent2)}
     textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
   </style>
 </head>
@@ -28,7 +29,9 @@
       <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
       <button id="resetBtn"   disabled>3) Reset</button>
     </div>
-    <p class="muted">If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.</p>
+    <p class="muted">
+      If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.
+    </p>
   </div>
 
   <div class="panel">
@@ -36,10 +39,8 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Import esptool-js as an ES module (official entry) -->
+  <!-- One module script: imports esptool-js and wires the UI -->
   <script type="module">
-    import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.6/lib/index.js';
-
     const logEl      = document.getElementById('log');
     const connectBtn = document.getElementById('connectBtn');
     const flashBtn   = document.getElementById('flashBtn');
@@ -48,7 +49,7 @@
     let port = null;       // Web Serial port
     let transport = null;  // esptool-js Transport
     let loader = null;     // esptool-js ESPLoader
-    const BAUD = 460800;   // Try 921600 later if stable
+    const BAUD = 460800;   // You can try 921600 later
 
     const log = (msg, isErr=false) => {
       const ts = new Date().toLocaleTimeString();
@@ -56,6 +57,18 @@
       logEl.scrollTop = logEl.scrollHeight;
       (isErr ? console.error : console.log)(msg);
     };
+
+    // 1) Try to import the ES module from the CDN (official entry)
+    let ESPLoader, Transport;
+    try {
+      ({ ESPLoader, Transport } = await import('https://unpkg.com/esptool-js@0.5.6/lib/index.js'));
+      log("Installer script loaded (ESM). esptool-js imported.");
+      connectBtn.disabled = false;
+    } catch (e) {
+      log(`ERROR: Failed to import esptool-js module: ${e?.message || e}`, true);
+      // Bail: keep buttons disabled so users don’t click into a broken flow.
+      // If you want to continue with a local fallback later, we can add it here.
+    }
 
     // Minimal terminal for ESPLoader
     const espTerminal = {
@@ -78,12 +91,6 @@
       }
     }
 
-    // Module is loaded → enable Connect
-    document.addEventListener('DOMContentLoaded', () => {
-      log("Installer script loaded (ESM). esptool-js imported.");
-      connectBtn.disabled = false;
-    });
-
     connectBtn.onclick = async () => {
       log("Connect clicked.");
       connectBtn.disabled = true; // prevent double-click reentry
@@ -92,15 +99,14 @@
           throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
         }
 
-        // If a previous attempt left the port open, close it first.
+        // Close lingering port if any
         if (port && (port.readable || port.writable)) {
           try { await port.close(); } catch {}
         }
 
-        // 1) Prompt user for a port (user gesture)
+        // User picks a port (user gesture required for Web Serial)
         port = await navigator.serial.requestPort({});
-        // 2) Open the port with options; open() throws on "already open"/invalid state
-        await port.open({ baudRate: BAUD });
+        await port.open({ baudRate: BAUD }); // open throws if already open/invalid
         log(`Port opened @ ${BAUD} baud.`);
 
         transport = new Transport(port);
@@ -115,7 +121,7 @@
       }catch(e){
         log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
 
-        // If "already open" or state error, try to close and re-enable
+        // If invalid state/already open, try to close and re-enable
         if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
           try { await port?.close(); } catch {}
         }
@@ -134,7 +140,7 @@
         const buf = new Uint8Array(await resp.arrayBuffer());
         log(`Image size: ${buf.length} bytes`);
 
-        // Full erase (comment out for faster incremental updates)
+        // Full erase (comment out to speed incremental updates)
         log("Erasing…");
         await loader.eraseFlash();
 
