@@ -4,36 +4,16 @@
 <head>
   <meta charset="utf-8" />
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
-  <!-- Load esptool-js (bundle) from CDN -->
-  https://unpkg.com/esptool-js/bundle.js</script>
+
+  <!-- 1) Load esptool-js bundle BEFORE your inline script -->
+  <script src="https://unpkg.com/esptool-js@0.8.2/bundle.js"></script>
+  <!-- You can pin another recent version if you prefer -->
   <style>
-    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width: 780px; margin: 48px auto; padding: 20px; background:#121212; color:#eaeaea; line-height:1.6; }
-    h1 { margin:0 0 8px; }
-    .row { display:flex; gap:10px; flex-wrap:wrap; margin:16px 0; }
-    button { background:#4CAF50; color:#fff; border:none; padding:12px 18px; border-radius:10px; font-weight:600; cursor:pointer; }
-    button:hover { background:#43a047; }
-    .panel { background:#1e1e1e; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:20px; margin:18px 0; }
-    textarea { width:100%; height:220px; border-radius:8px; border:1px solid rgba(255,255,255,.08); background:#0f0f0f; color:#cfe8ff; padding:10px; font-family: ui-monospace, Menlo, Consolas, monospace; }
-    .muted { color:#bbb; }
+    /* … your existing styles … */
   </style>
 </head>
 <body>
-  <h1>BTAudio – Custom Web Flasher</h1>
-  <p class="muted">Version 0.0.1 • Board: SparkFun ESP32 Thing Plus WROOM</p>
-
-  <div class="panel">
-    <div class="row">
-      <button id="connectBtn">1) Connect</button>
-      <button id="flashBtn" disabled>2) Flash UTAudio.bin</button>
-      <button id="resetBtn" disabled>3) Reset</button>
-    </div>
-    <p class="muted">If the board doesn’t auto‑reboot, click Reset or press the physical <strong>RESET</strong> (EN) button.</p>
-  </div>
-
-  <div class="panel">
-    <h3>Log</h3>
-    <textarea id="log" readonly></textarea>
-  </div>
+  <!-- … your existing HTML … -->
 
 <script>
 (() => {
@@ -45,7 +25,7 @@
   let port = null;
   let transport = null;   // esptool-js transport
   let loader = null;      // esptool-js ESPLoader
-  let baud = 460800;      // you can try 921600; some bridges/OSes are happier at 460800
+  let baud = 460800;
 
   function log(msg) {
     const ts = new Date().toLocaleTimeString();
@@ -53,24 +33,19 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  // Minimal terminal wrapper for esptool-js
   const espTerminal = {
-    clean()    { logEl.value = ""; },
+    clean()     { logEl.value = ""; },
     writeLine(s){ log(s); },
     write(s)    { log(s); }
   };
 
-  // Post-flash reset sequence via WebSerial signals:
-  // Pulse EN low/high with GPIO0 (DTR) high, so the app boots normally.
   async function hardResetToApp() {
     if (!port) return;
     try {
-      // Ensure GPIO0 (BOOT) is HIGH (normal boot)
-      await port.setSignals({ dataTerminalReady: false });   // DTR = false
-      // Pulse EN (RESET) LOW then HIGH via RTS
-      await port.setSignals({ requestToSend: true  });       // RTS = true  => EN low
-      await new Promise(r => setTimeout(r, 100));            // 100 ms
-      await port.setSignals({ requestToSend: false });       // RTS = false => EN high
+      await port.setSignals({ dataTerminalReady: false });  // DTR = false (GPIO0 high)
+      await port.setSignals({ requestToSend: true  });      // RTS = true  (EN low)
+      await new Promise(r => setTimeout(r, 100));
+      await port.setSignals({ requestToSend: false });      // RTS = false (EN high)
       log("Issued RTS/DTR reset (normal boot).");
     } catch (e) {
       log("Reset sequence failed: " + e.message);
@@ -79,17 +54,20 @@
 
   connectBtn.onclick = async () => {
     try {
-      // Request a serial port and open it
+      // Ensure bundle is loaded
+      if (!window.Transport || !window.ESPLoader) {
+        throw new Error("esptool-js bundle not loaded (window.Transport / window.ESPLoader missing).");
+      }
+
+      // Request & open port
       port = await navigator.serial.requestPort({});
       await port.open({ baudRate: baud });
       log(`Port opened @ ${baud} baud.`);
 
-      // Create esptool-js transport & loader (from CDN bundle)
-      // NOTE: ESPLoader & Transport classes are exposed by the bundle.
-      transport = new Transport(port);
-      loader = new ESPLoader(transport, baud, espTerminal);
+      // 2) Use window.Transport / window.ESPLoader
+      transport = new window.Transport(port);
+      loader    = new window.ESPLoader(transport, baud, espTerminal);
 
-      // Connect to chip
       await loader.connect();
       const chip = await loader.chip;
       log(`Connected to chip: ${chip}`);
@@ -103,7 +81,6 @@
 
   flashBtn.onclick = async () => {
     try {
-      // Fetch merged image
       const url = "webflash/UTAudio.bin";
       log("Downloading " + url + " …");
       const resp = await fetch(url, { cache: "no-cache" });
@@ -111,17 +88,14 @@
       const buf = new Uint8Array(await resp.arrayBuffer());
       log(`Image size: ${buf.length} bytes`);
 
-      // Optional: erase (comment out to skip full erase for speed)
       log("Erasing…");
       await loader.eraseFlash();
 
-      // Write at offset 0x0 (merged image)
-      log("Writing flash @ 0x000000 … this may take ~30–90s for ~1MB images.");
+      log("Writing flash @ 0x000000 …");
       await loader.writeFlash(0x000000, buf);
 
       log("Flash complete. Wrapping up…");
-      await hardResetToApp();   // try to auto‑reboot
-
+      await hardResetToApp();
       log("Done.");
     } catch (e) {
       log("Flash failed: " + e.message);
