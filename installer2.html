@@ -104,6 +104,7 @@
       await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
       log(`Port opened @ ${BAUD} baud.`);
 
+      await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
             
       /// Robust shim: guarantee getInfo() exists AND keep the same prototype/shape as the real port
       const portShim = Object.assign(
