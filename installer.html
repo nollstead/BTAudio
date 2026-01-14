@@ -4,10 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
-
-  <!-- Load esptool-js UMD bundle LOCALLY, BEFORE our code -->
-  https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js</script>
-
   <style>
     :root {
       --bg:#121212; --panel:#1e1e1e; --text:#eaeaea; --muted:#bbb;
@@ -20,6 +16,7 @@
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
+    button[disabled]{opacity:.5;cursor:not-allowed}
     button:hover{background:var(--accent2)}
     textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace, Menlo, Consolas, monospace}
     #err{position:fixed;inset:0;background:#0008;color:#fff;padding:16px;display:none;z-index:9999;overflow:auto}
@@ -32,7 +29,7 @@
 
   <div class="panel">
     <div class="row">
-      <button id="connectBtn">1) Connect</button>
+      <button id="connectBtn" disabled>1) Connect</button>
       <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
       <button id="resetBtn"   disabled>3) Reset</button>
     </div>
@@ -46,11 +43,10 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Error overlay (shows early script errors without DevTools) -->
   <div id="err"><h3>Page Error</h3><pre id="errText"></pre></div>
 
 <script>
-/* Show any early errors directly on the page */
+/* Error overlay so you see issues without DevTools */
 (function(){
   const box = document.getElementById('err');
   const txt = document.getElementById('errText');
@@ -71,6 +67,7 @@
   let transport = null;   // esptool-js Transport
   let loader = null;      // esptool-js ESPLoader
   let baud = 460800;      // Try 921600 later if stable on your setups
+  let bundleReady = false;
 
   function log(msg){
     const ts = new Date().toLocaleTimeString();
@@ -78,10 +75,48 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  // Self-test so you can see if the bundle was found and handlers are attached
-  document.addEventListener('DOMContentLoaded', () => {
-    log("Installer script loaded.");
-    log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
+  function addScript(src){
+    return new Promise((resolve,reject)=>{
+      const s = document.createElement('script');
+      s.src = src; s.async = false;      // keep order deterministic
+      s.onload = () => resolve(src);
+      s.onerror = () => reject(new Error('Failed to load '+src));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function loadEsptoolBundle(){
+    // Prefer your local copy; fall back to CDN if needed (as documented by Espressif).
+    const local = "/BTAudio/assets/esptooljs/bundle.js";
+    const cdn   = "https://unpkg.com/esptool-js/bundle.js";  // official bundle path [1](https://www.espboards.dev/blog/standalone-esptool-basics/)
+    try{
+      await addScript(local);
+      if (window.Transport && window.ESPLoader) return {src:local, ok:true};
+      throw new Error("Local bundle loaded but globals missing");
+    }catch(e1){
+      log("Local bundle not available, trying CDN…");
+      try{
+        await addScript(cdn);
+        if (window.Transport && window.ESPLoader) return {src:cdn, ok:true};
+        throw new Error("CDN bundle loaded but globals missing");
+      }catch(e2){
+        return {ok:false, err: e2};
+      }
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    log("Installer script loaded. Loading esptool-js bundle…");
+    const res = await loadEsptoolBundle();
+    if (res.ok){
+      bundleReady = true;
+      log("Bundle loaded from: " + res.src);
+      log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
+      connectBtn.disabled = false;    // only enable after bundle is confirmed
+    }else{
+      log("ERROR: Could not load esptool-js bundle (local or CDN).");
+      log("Check path /BTAudio/assets/esptooljs/bundle.js (case) or network policy blocking unpkg.");
+    }
   });
 
   const espTerminal = {
@@ -90,9 +125,6 @@
     write(s){ log(s); }
   };
 
-  // Post-flash reset via WebSerial control lines:
-  // DTR=false -> GPIO0 HIGH (normal boot), then pulse RTS to reset EN.
-  // Mirrors desktop esptool.py’s “--after hard_reset” semantics in the browser. [3](https://learnxinyminutes.com/toml/)
   async function hardResetToApp(){
     if(!port) return;
     try{
@@ -109,21 +141,18 @@
   connectBtn.onclick = async () => {
     log("Connect clicked.");
     try{
-      if(!('serial' in navigator)) throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
-      if(!window.Transport || !window.ESPLoader){
+      if(!bundleReady || !window.Transport || !window.ESPLoader){
         throw new Error("esptool-js bundle not loaded (window.Transport / window.ESPLoader missing).");
       }
+      if(!('serial' in navigator)) throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
 
-      // Request & open port
       port = await navigator.serial.requestPort({});
       await port.open({ baudRate: baud });
       log(`Port opened @ ${baud} baud.`);
 
-      // Create transport/loader (from esptool-js bundle). [1](https://www.espboards.dev/blog/standalone-esptool-basics/)
-      transport = new window.Transport(port);
+      transport = new window.Transport(port);                       // from esptool-js bundle
       loader    = new window.ESPLoader(transport, baud, espTerminal);
 
-      // Connect to chip
       await loader.connect();
       const chip = await loader.chip;
       log(`Connected to chip: ${chip}`);
@@ -145,11 +174,9 @@
       const buf = new Uint8Array(await resp.arrayBuffer());
       log(`Image size: ${buf.length} bytes`);
 
-      // Full erase (comment out to speed up incremental updates)
       log("Erasing…");
       await loader.eraseFlash();
 
-      // Write merged image at 0x000000 (offset 0)
       log("Writing flash @ 0x000000 … (browser write ~30–90s for ~1MB images)");
       await loader.writeFlash(0x000000, buf);
 
