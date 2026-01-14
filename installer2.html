@@ -104,6 +104,12 @@
         await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
         log(`Port opened @ ${BAUD} baud.`);
 
+        
+        // --- SHIM: provide a getInfo() if missing (Edge/Chrome variants, enterprise policy, etc.)
+        if (typeof port.getInfo !== 'function') {
+          port.getInfo = () => ({ usbVendorId: undefined, usbProductId: undefined });
+        }
+
         transport = new Transport(port);
         loader    = new ESPLoader(transport, BAUD, espTerminal);
 
