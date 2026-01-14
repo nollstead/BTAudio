@@ -3,59 +3,105 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
-  <!-- 1) Load esptool-js bundle BEFORE your inline script -->
+  <!-- Load esptool-js UMD bundle FIRST -->
   <script src="https://unpkg.com/esptool-js@0.8.2/bundle.js"></script>
-  <!-- You can pin another recent version if you prefer -->
+
   <style>
-    /* … your existing styles … */
+    :root {
+      --bg:#121212; --panel:#1e1e1e; --text:#eaeaea; --muted:#bbb;
+      --accent:#4CAF50; --accent2:#43a047; --border:rgba(255,255,255,.08);
+    }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text);line-height:1.6}
+    h1{margin:0 0 8px}
+    .muted{color:var(--muted)}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+    button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
+    button:hover{background:var(--accent2)}
+    textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace, Menlo, Consolas, monospace}
+    /* simple error overlay */
+    #err{position:fixed;inset:0;background:#0008;color:#fff;padding:16px;display:none;z-index:9999;overflow:auto}
+    #err pre{white-space:pre-wrap}
   </style>
 </head>
 <body>
-  <!-- … your existing HTML … -->
+  <h1>BTAudio – Custom Web Flasher</h1>
+  <p class="muted">Version 0.0.1 • Board: SparkFun ESP32 Thing Plus WROOM</p>
+
+  <div class="panel">
+    <div class="row">
+      <button id="connectBtn">1) Connect</button>
+      <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
+      <button id="resetBtn"   disabled>3) Reset</button>
+    </div>
+    <p class="muted">If the board doesn’t auto‑reboot, click <b>Reset</b> or press the physical <b>RESET</b> (EN) button.</p>
+  </div>
+
+  <div class="panel">
+    <h3>Log</h3>
+    <textarea id="log" readonly></textarea>
+  </div>
+
+  <!-- error overlay -->
+  <div id="err"><h3>Page Error</h3><pre id="errText"></pre></div>
 
 <script>
-(() => {
-  const logEl = document.getElementById('log');
-  const connectBtn = document.getElementById('connectBtn');
-  const flashBtn   = document.getElementById('flashBtn');
-  const resetBtn   = document.getElementById('resetBtn');
+(function hardenWindowErrorOverlay(){
+  const box = document.getElementById('err');
+  const txt = document.getElementById('errText');
+  function show(e){ box.style.display='block'; txt.textContent = (e && e.stack) ? e.stack : String(e); }
+  window.addEventListener('error',  ev => { show(ev.error || ev.message || ev); });
+  window.addEventListener('unhandledrejection', ev => { show(ev.reason || ev); });
+})();
+</script>
+
+<script>
+(function(){
+  const logEl     = document.getElementById('log');
+  const connectBtn= document.getElementById('connectBtn');
+  const flashBtn  = document.getElementById('flashBtn');
+  const resetBtn  = document.getElementById('resetBtn');
 
   let port = null;
-  let transport = null;   // esptool-js transport
+  let transport = null;   // esptool-js Transport
   let loader = null;      // esptool-js ESPLoader
-  let baud = 460800;
+  let baud = 460800;      // try 921600 later if stable on your setups
 
-  function log(msg) {
+  function log(msg){
     const ts = new Date().toLocaleTimeString();
     logEl.value += `[${ts}] ${msg}\n`;
     logEl.scrollTop = logEl.scrollHeight;
   }
 
   const espTerminal = {
-    clean()     { logEl.value = ""; },
+    clean(){ logEl.value = ""; },
     writeLine(s){ log(s); },
-    write(s)    { log(s); }
+    write(s){ log(s); }
   };
 
-  async function hardResetToApp() {
-    if (!port) return;
-    try {
-      await port.setSignals({ dataTerminalReady: false });  // DTR = false (GPIO0 high)
-      await port.setSignals({ requestToSend: true  });      // RTS = true  (EN low)
-      await new Promise(r => setTimeout(r, 100));
-      await port.setSignals({ requestToSend: false });      // RTS = false (EN high)
+  async function hardResetToApp(){
+    if(!port) return;
+    try{
+      // DTR false => GPIO0 HIGH (normal boot)
+      await port.setSignals({ dataTerminalReady: false });
+      // RTS true  => EN low, then release
+      await port.setSignals({ requestToSend: true  });
+      await new Promise(r => setTimeout(r, 120));
+      await port.setSignals({ requestToSend: false });
       log("Issued RTS/DTR reset (normal boot).");
-    } catch (e) {
+    }catch(e){
       log("Reset sequence failed: " + e.message);
     }
   }
 
   connectBtn.onclick = async () => {
-    try {
-      // Ensure bundle is loaded
-      if (!window.Transport || !window.ESPLoader) {
+    try{
+      if(!('serial' in navigator)) throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
+      if(!window.Transport || !window.ESPLoader){
         throw new Error("esptool-js bundle not loaded (window.Transport / window.ESPLoader missing).");
       }
 
@@ -64,40 +110,43 @@
       await port.open({ baudRate: baud });
       log(`Port opened @ ${baud} baud.`);
 
-      // 2) Use window.Transport / window.ESPLoader
+      // Create esptool-js transport/loader
       transport = new window.Transport(port);
       loader    = new window.ESPLoader(transport, baud, espTerminal);
 
+      // Connect to chip
       await loader.connect();
       const chip = await loader.chip;
       log(`Connected to chip: ${chip}`);
 
       flashBtn.disabled = false;
       resetBtn.disabled = false;
-    } catch (e) {
+    }catch(e){
       log("Connect failed: " + e.message);
     }
   };
 
   flashBtn.onclick = async () => {
-    try {
+    try{
       const url = "webflash/UTAudio.bin";
       log("Downloading " + url + " …");
       const resp = await fetch(url, { cache: "no-cache" });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const buf = new Uint8Array(await resp.arrayBuffer());
       log(`Image size: ${buf.length} bytes`);
 
+      // Full erase (comment out if you want faster incremental updates)
       log("Erasing…");
       await loader.eraseFlash();
 
-      log("Writing flash @ 0x000000 …");
+      // Write merged image at 0x000000
+      log("Writing flash @ 0x000000 … (browser write ~30–90s for ~1MB images)");
       await loader.writeFlash(0x000000, buf);
 
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
       log("Done.");
-    } catch (e) {
+    }catch(e){
       log("Flash failed: " + e.message);
     }
   };
