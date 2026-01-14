@@ -105,10 +105,16 @@
         log(`Port opened @ ${BAUD} baud.`);
 
         
-        // --- SHIM: provide a getInfo() if missing (Edge/Chrome variants, enterprise policy, etc.)
-        if (typeof port.getInfo !== 'function') {
-          port.getInfo = () => ({ usbVendorId: undefined, usbProductId: undefined });
-        }
+ 
+  // --- SHIM (robust): ensure getInfo() is visible to anything that touches this port
++   const portShim = new Proxy(port, {
++     get(target, prop, receiver) {
++       if (prop === 'getInfo') {
++         return () => ({ usbVendorId: undefined, usbProductId: undefined });
++       }
++       return Reflect.get(target, prop, receiver);
++     }
++   });
 
         transport = new Transport(port);
         loader    = new ESPLoader(transport, BAUD, espTerminal);
