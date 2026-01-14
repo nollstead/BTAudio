@@ -1,23 +1,25 @@
+
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
-  <!-- Load esptool-js UMD bundle LOCALLY, BEFORE any of your code -->
+  <!-- Load esptool-js UMD bundle -->
   <script src="https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js"></script>
 
   <style>
-    :root { --bg:#121212; --panel:#1e1e1e; --text:#eaeaea; --muted:#bbb; --accent:#4CAF50; --accent2:#43a047; --border:rgba(255,255,255,.08) }
+    :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
     *{box-sizing:border-box}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text);line-height:1.6}
-    h1{margin:0 0 8px} .muted{color:var(--muted)}
+    h1{margin:0 0 8px}.muted{color:var(--muted)}
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
-    button[disabled]{opacity:.55;cursor:not-allowed} button:hover{background:var(--accent2)}
-    textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace, Menlo, Consolas, monospace}
+    button[disabled]{opacity:.55;cursor:not-allowed}
+    button:hover{background:var(--accent2)}
+    textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
   </style>
 </head>
 <body>
@@ -27,8 +29,8 @@
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>1) Connect</button>
-      <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
-      <button id="resetBtn"   disabled>3) Reset</button>
+      <button id="flashBtn" disabled>2) Flash UTAudio.bin</button>
+      <button id="resetBtn" disabled>3) Reset</button>
     </div>
     <p class="muted">If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.</p>
   </div>
@@ -46,7 +48,7 @@
   const resetBtn   = document.getElementById('resetBtn');
 
   let port = null, transport = null, loader = null;
-  let baud = 460800; // try 921600 later if stable
+  const baud = 460800; // try 921600 later if stable
 
   function log(msg){
     const ts = new Date().toLocaleTimeString();
@@ -65,10 +67,13 @@
     }
   });
 
-  const espTerminal = { clean(){logEl.value=""}, writeLine(s){log(s)}, write(s){log(s)} };
+  const espTerminal = {
+    clean(){ logEl.value = ""; },
+    writeLine(s){ log(s); },
+    write(s){ log(s); }
+  };
 
-  // Post-flash reset via WebSerial control lines:
-  // DTR=false -> GPIO0 HIGH (normal boot), then pulse RTS to reset EN.
+  // Post-flash reset via WebSerial control lines (DTR=false, RTS pulse)
   async function hardResetToApp(){
     if(!port) return;
     try{
@@ -117,9 +122,11 @@
       const buf = new Uint8Array(await resp.arrayBuffer());
       log(`Image size: ${buf.length} bytes`);
 
+      // Full erase (comment out to speed up incremental updates)
       log("Erasing…");
       await loader.eraseFlash();
 
+      // Write merged image at 0x000000 (offset 0)
       log("Writing flash @ 0x000000 … (browser write ~30–90s for ~1MB images)");
       await loader.writeFlash(0x000000, buf);
 
