@@ -1,27 +1,14 @@
 
 esp_toml_version = 1.0
 
-# Base URL where your firmware files are hosted
 firmware_images_url = "https://nollstead.github.io/BTAudio/webflash/"
-
-# The app name must match the section header below exactly
 supported_apps = ["BTAudio"]
 
 [BTAudio]
-chipsets = ["ESP32"]                    # Only ESP32, no C3 option
-image.esp32 = "UTAudio.bin"
+chipsets = ["ESP32"]
+image.esp32 = "BTAudio.bin"
 
-# Multi-line description supported via triple quotes
-description = """
-**Nollstead Studio BTAudio Firmware**
-Version **0.0.1**
+description = "Nollstead Studio BT Audio Firmware – Version 0.0.1"
 
-Repository:
-https://github.com/nollstead/BTAudio
-"""
-
-# Optional: additional markdown shown in "Application Information"
+# Full Markdown goes here
 readme.text = "https://nollstead.github.io/BTAudio/app-info.md"
-
-# Optional: console baud rate if your app uses a non-default
-# console_baudrate = 115200
