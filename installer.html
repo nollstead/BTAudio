@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
-  <!-- Load esptool-js UMD bundle -->
+  <!-- Load esptool-js UMD bundle from YOUR site (must be before any other scripts) -->
   <script src="https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js"></script>
 
   <style>
@@ -17,8 +16,7 @@
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
-    button[disabled]{opacity:.55;cursor:not-allowed}
-    button:hover{background:var(--accent2)}
+    button[disabled]{opacity:.55;cursor:not-allowed}button:hover{background:var(--accent2)}
     textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
   </style>
 </head>
@@ -29,8 +27,8 @@
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>1) Connect</button>
-      <button id="flashBtn" disabled>2) Flash UTAudio.bin</button>
-      <button id="resetBtn" disabled>3) Reset</button>
+      <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
+      <button id="resetBtn"   disabled>3) Reset</button>
     </div>
     <p class="muted">If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.</p>
   </div>
@@ -48,7 +46,7 @@
   const resetBtn   = document.getElementById('resetBtn');
 
   let port = null, transport = null, loader = null;
-  const baud = 460800; // try 921600 later if stable
+  const baud = 460800; // You can try 921600 later if stable
 
   function log(msg){
     const ts = new Date().toLocaleTimeString();
@@ -60,18 +58,11 @@
   document.addEventListener('DOMContentLoaded', () => {
     log("Installer script loaded.");
     log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
-    if (window.Transport && window.ESPLoader) {
-      connectBtn.disabled = false;
-    } else {
-      log("ERROR: esptool-js bundle not loaded. Check the <script src> URL in <head>.");
-    }
+    if (window.Transport && window.ESPLoader) connectBtn.disabled = false;
+    else log("ERROR: esptool-js bundle not loaded. Check the <script src> URL in <head>.");
   });
 
-  const espTerminal = {
-    clean(){ logEl.value = ""; },
-    writeLine(s){ log(s); },
-    write(s){ log(s); }
-  };
+  const espTerminal = { clean(){logEl.value=""}, writeLine(s){log(s)}, write(s){log(s)} };
 
   // Post-flash reset via WebSerial control lines (DTR=false, RTS pulse)
   async function hardResetToApp(){
@@ -82,9 +73,7 @@
       await new Promise(r => setTimeout(r, 120));
       await port.setSignals({ requestToSend: false });       // RTS = false (EN high)
       log("Issued RTS/DTR reset (normal boot).");
-    }catch(e){
-      log("Reset sequence failed: " + e.message);
-    }
+    }catch(e){ log("Reset sequence failed: " + e.message); }
   }
 
   connectBtn.onclick = async () => {
@@ -107,9 +96,7 @@
 
       flashBtn.disabled = false;
       resetBtn.disabled = false;
-    }catch(e){
-      log("Connect failed: " + e.message);
-    }
+    }catch(e){ log("Connect failed: " + e.message); }
   };
 
   flashBtn.onclick = async () => {
@@ -122,20 +109,16 @@
       const buf = new Uint8Array(await resp.arrayBuffer());
       log(`Image size: ${buf.length} bytes`);
 
-      // Full erase (comment out to speed up incremental updates)
       log("Erasing…");
       await loader.eraseFlash();
 
-      // Write merged image at 0x000000 (offset 0)
       log("Writing flash @ 0x000000 … (browser write ~30–90s for ~1MB images)");
       await loader.writeFlash(0x000000, buf);
 
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
       log("Done.");
-    }catch(e){
-      log("Flash failed: " + e.message);
-    }
+    }catch(e){ log("Flash failed: " + e.message); }
   };
 
   resetBtn.onclick = async () => { log("Reset clicked."); await hardResetToApp(); };
