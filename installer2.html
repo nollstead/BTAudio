@@ -40,125 +40,125 @@
   </div>
 
   <!-- Single module: import the bundle and wire the UI in one place -->
-  <script type="module">
-    import * as esptool from 'https://unpkg.com/esptool-js@0.5.6/bundle.js';
-    // If your network blocks unpkg, download the bundle and host it locally, then use:
-    // import * as esptool from '/BTAudio/assets/esptooljs/bundle.js';
+<script type="module">
+  import * as esptool from 'https://unpkg.com/esptool-js@0.5.6/bundle.js';
+  // If your network blocks unpkg, download the bundle and host it locally, then use:
+  // import * as esptool from '/BTAudio/assets/esptooljs/bundle.js';
 
-    const { ESPLoader, Transport } = esptool;
+  const { ESPLoader, Transport } = esptool;
 
-    const logEl      = document.getElementById('log');
-    const connectBtn = document.getElementById('connectBtn');
-    const flashBtn   = document.getElementById('flashBtn');
-    const resetBtn   = document.getElementById('resetBtn');
+  const logEl      = document.getElementById('log');
+  const connectBtn = document.getElementById('connectBtn');
+  const flashBtn   = document.getElementById('flashBtn');
+  const resetBtn   = document.getElementById('resetBtn');
 
-    let port = null;
-    let loader = null;
-    let transport = null;
-    const BAUD = 460800;  // Try 921600 later if stable for your testers
+  let port = null;
+  let loader = null;
+  let transport = null;
+  const BAUD = 460800;  // Try 921600 later if stable for your testers
 
-    const log = (m, e=false) => {
-      const ts = new Date().toLocaleTimeString();
-      logEl.value += `[${ts}] ${m}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
-      (e ? console.error : console.log)(m);
-    };
+  const log = (m, e=false) => {
+    const ts = new Date().toLocaleTimeString();
+    logEl.value += `[${ts}] ${m}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+    (e ? console.error : console.log)(m);
+  };
 
-    // Minimal terminal for ESPLoader
-    const espTerminal = {
-      clean(){ logEl.value = ""; },
-      writeLine(s){ log(s); },
-      write(s){ log(s); }
-    };
+  // Minimal terminal for ESPLoader
+  const espTerminal = {
+    clean(){ logEl.value = ""; },
+    writeLine(s){ log(s); },
+    write(s){ log(s); }
+  };
 
-    // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse)
-    async function hardResetToApp(){
-      if(!port) return;
-      try{
-        await port.setSignals({ dataTerminalReady: false }); // DTR=false => GPIO0 HIGH
-        await port.setSignals({ requestToSend: true  });      // RTS=true  => EN low
-        await new Promise(r => setTimeout(r, 120));
-        await port.setSignals({ requestToSend: false });      // EN high
-        log("Issued RTS/DTR reset (normal boot).");
-      }catch(e){ log(`Reset sequence failed: ${e?.message || e}`, true); }
-    }
+  // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse)
+  async function hardResetToApp(){
+    if(!port) return;
+    try{
+      await port.setSignals({ dataTerminalReady: false }); // DTR=false => GPIO0 HIGH
+      await port.setSignals({ requestToSend: true  });      // RTS=true  => EN low
+      await new Promise(r => setTimeout(r, 120));
+      await port.setSignals({ requestToSend: false });      // EN high
+      log("Issued RTS/DTR reset (normal boot).");
+    }catch(e){ log(`Reset sequence failed: ${e?.message || e}`, true); }
+  }
 
-    // Module imported → enable Connect
-    log("Installer script loaded (bundle-as-module).");
-    log(`Module exports: Transport=${!!Transport}, ESPLoader=${!!ESPLoader}`);
-    connectBtn.disabled = !(Transport && ESPLoader);
+  // Module imported → enable Connect
+  log("Installer script loaded (bundle-as-module).");
+  log(`Module exports: Transport=${!!Transport}, ESPLoader=${!!ESPLoader}`);
+  connectBtn.disabled = !(Transport && ESPLoader);
 
-    connectBtn.onclick = async () => {
-      log("Connect clicked.");
-      connectBtn.disabled = true;
-      try{
-        if(!('serial' in navigator)){
-          throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
-        }
-
-        // Close lingering port if any
-        if (port && (port.readable || port.writable)) { try { await port.close(); } catch {} }
-
-        // User picks a port (user gesture required)
-        port = await navigator.serial.requestPort({});
-        await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
-        log(`Port opened @ ${BAUD} baud.`);
-
-        
- 
-      // Robust shim: guarantee getInfo() exists for anything that touches this port
-         const portShim = new Proxy(port, {
-           get(target, prop, receiver) {
-             if (prop === 'getInfo') return () => ({ usbVendorId: undefined, usbProductId: undefined });
-             return Reflect.get(target, prop, receiver);
-           }
-         });
-        transport = new Transport(portShim)
-        loader    = new ESPLoader(transport, BAUD, espTerminal);
-
-        await loader.connect();
-        const chip = await loader.chip;
-        log(`Connected to chip: ${chip}`);
-
-        flashBtn.disabled = false;
-        resetBtn.disabled = false;
-      }catch(e){
-        log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
-        if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
-          try { await port?.close(); } catch {}
-        }
-        connectBtn.disabled = false;
+  connectBtn.onclick = async () => {
+    log("Connect clicked.");
+    connectBtn.disabled = true;
+    try{
+      if(!('serial' in navigator)){
+        throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
       }
-    };
 
-    flashBtn.onclick = async () => {
-      log("Flash clicked.");
-      flashBtn.disabled = true;
-      try{
-        const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
-        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const buf = new Uint8Array(await resp.arrayBuffer());
-        log(`Image size: ${buf.length} bytes`);
+      // Close lingering port if any
+      if (port && (port.readable || port.writable)) { try { await port.close(); } catch {} }
 
-        // Full erase (comment out for faster incremental updates)
-        log("Erasing…");
-        await loader.eraseFlash();
+      // User picks a port (user gesture required)
+      port = await navigator.serial.requestPort({});
+      await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
+      log(`Port opened @ ${BAUD} baud.`);
 
-        // Write merged image at 0x000000
-        log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
-        await loader.writeFlash(0x000000, buf);
+      // Robust shim: guarantee getInfo() exists for anything that touches this port
+      const portShim = new Proxy(port, {
+        get(target, prop, receiver) {
+          if (prop === 'getInfo') return () => ({ usbVendorId: undefined, usbProductId: undefined });
+          return Reflect.get(target, prop, receiver);
+        }
+      });
 
-        log("Flash complete. Wrapping up…");
-        await hardResetToApp();
-        log("Done.");
-      }catch(e){ log(`Flash failed: ${e?.message || e}`, true); }
-      finally{ flashBtn.disabled = false; }
-    };
+      transport = new Transport(portShim);
+      loader    = new ESPLoader(transport, BAUD, espTerminal);
 
-    resetBtn.onclick = async () => {
-      log("Reset clicked.");
+      await loader.connect();
+      const chip = await loader.chip;
+      log(`Connected to chip: ${chip}`);
+
+      flashBtn.disabled = false;
+      resetBtn.disabled = false;
+    }catch(e){
+      log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
+      if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
+        try { await port?.close(); } catch {}
+      }
+      connectBtn.disabled = false;
+    }
+  };
+
+  flashBtn.onclick = async () => {
+    log("Flash clicked.");
+    flashBtn.disabled = true;
+    try{
+      const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
+      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      log(`Image size: ${buf.length} bytes`);
+
+      // Full erase (comment out for faster incremental updates)
+      log("Erasing…");
+      await loader.eraseFlash();
+
+      // Write merged image at 0x000000
+      log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
+      await loader.writeFlash(0x000000, buf);
+
+      log("Flash complete. Wrapping up…");
       await hardResetToApp();
-    };
-  </script>
+      log("Done.");
+    }catch(e){ log(`Flash failed: ${e?.message || e}`, true); }
+    finally{ flashBtn.disabled = false; }
+  };
+
+  resetBtn.onclick = async () => {
+    log("Reset clicked.");
+    await hardResetToApp();
+  };
+</script>
+
 </body>
 </html>
