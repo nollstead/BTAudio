@@ -1,15 +1,18 @@
-
 esp_toml_version = 1.0
 
 # Base URL where your firmware files are hosted
 firmware_images_url = "https://nollstead.github.io/BTAudio/webflash/"
 
 # List your app(s). You can add more later.
-supported_apps = ["ut-audio"]
+supported_apps = ["BTAudio"]
 
 [ut-audio]
 chipsets = ["ESP32"]         # SparkFun ESP32 Thing Plus WROOM uses classic ESP32
 image.esp32 = "UTAudio.bin"  # The file you just generated
-description = "BT Audio firmware for SparkFun ESP32 Thing Plus WROOM"
+description =  """
+**Nollstead Studio BTAudio Firmware**
+Version **0.0.1**
+"""
+readme.text = "https://nollstead.github.io/BTAudio/app-info.md"
 # Optional: console baud rate if your app uses a non-default
 # console_baudrate = 115200
