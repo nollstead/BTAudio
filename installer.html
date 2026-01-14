@@ -6,7 +6,28 @@
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
   <!-- Load esptool-js UMD bundle from YOUR site (must be before any other scripts) -->
-  <script src="https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js"></script>
+  <script type="module">
+  (async () => {
+    const url = "https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js";
+    try {
+      const mod = await import(url);
+      // mod may export named exports or have a default that contains the exports.
+      const maybe = mod.default ?? mod;
+      // Try to map the exports the page expects
+      window.Transport = mod.Transport ?? maybe.Transport ?? maybe.Transport ?? maybe;
+      window.ESPLoader  = mod.ESPLoader  ?? maybe.ESPLoader  ?? maybe.ESPLoader  ?? maybe;
+      console.log("esptool-js module imported:", { Transport: !!window.Transport, ESPLoader: !!window.ESPLoader });
+    } catch (err) {
+      console.error("Failed to import esptool-js bundle as module:", err);
+      // Optionally fall back to injecting a classic script tag (will still fail if file is ESM)
+      const s = document.createElement('script');
+      s.src = url;
+      s.onload = () => console.log("Fallback script loaded (classic).");
+      s.onerror = (e) => console.error("Fallback classic script failed:", e);
+      document.head.appendChild(s);
+    }
+  })();
+  </script>
 
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
