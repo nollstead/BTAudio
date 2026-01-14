@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Nollstead Studio BTAudio – Custom Flasher</title>
 
-  <!-- IMPORTANT: Load esptool-js UMD bundle LOCALLY, BEFORE our code -->
+  <!-- Load esptool-js UMD bundle LOCALLY, BEFORE our code -->
   <script src="assets/esptooljs/bundle.js"></script>
 
   <style>
@@ -94,13 +94,12 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  // Self-test: show whether the bundle is present and handlers will attach
+  // Self-test so you can see if the bundle was found and handlers are attached
   document.addEventListener('DOMContentLoaded', () => {
     log("Installer script loaded.");
-   esent: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
+    log(`Bundle present: Transport=${!!window.Transport}, ESPLoader=${!!window.ESPLoader}`);
   });
 
-  // Minimal terminal wrapper for esptool-js
   const espTerminal = {
     clean(){ logEl.value = ""; },
     writeLine(s){ log(s); },
@@ -109,7 +108,7 @@
 
   // Post-flash reset via WebSerial control lines:
   // DTR=false -> GPIO0 HIGH (normal boot), then pulse RTS to reset EN.
-  // Mirrors desktop esptool.py’s “--after hard_reset” semantics in the browser. [3](https://docs.sparkfun.com/SparkFun_Thing_Plus_ESP32_WROOM_C/single_page/)
+  // Mirrors desktop esptool.py’s “--after hard_reset” semantics in the browser. [2](https://docs.sparkfun.com/SparkFun_Thing_Plus_ESP32_WROOM_C/single_page/)
   async function hardResetToApp(){
     if(!port) return;
     try{
@@ -124,7 +123,7 @@
   }
 
   connectBtn.onclick = async () => {
-    log("Connect clicked.");  // immediate feedback
+    log("Connect clicked.");
     try{
       if(!('serial' in navigator)) throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
       if(!window.Transport || !window.ESPLoader){
@@ -153,7 +152,7 @@
   };
 
   flashBtn.onclick = async () => {
-    log("Flash clicked.");  // immediate feedback
+    log("Flash clicked.");
     try{
       const url = "webflash/UTAudio.bin";
       log("Downloading " + url + " …");
@@ -179,7 +178,7 @@
   };
 
   resetBtn.onclick = async () => {
-    log("Reset clicked.");  // immediate feedback
+    log("Reset clicked.");
     await hardResetToApp();
   };
 })();
