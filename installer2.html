@@ -1,0 +1,161 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Nollstead Studio BTAudio – Custom Flasher (ESM)</title>
+
+  <style>
+    :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text);line-height:1.6}
+    h1{margin:0 0 8px}.muted{color:var(--muted)}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+    button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
+    button[disabled]{opacity:.55;cursor:not-allowed}button:hover:not([disabled]){background:var(--accent2)}
+    textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  </style>
+</head>
+<body>
+  <h1>BTAudio – Custom Web Flasher</h1>
+  <p class="muted">Version 0.0.1 • SparkFun ESP32 Thing Plus WROOM</p>
+
+  <div class="panel">
+    <div class="row">
+      <button id="connectBtn" disabled>1) Connect</button>
+      <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
+      <button id="resetBtn"   disabled>3) Reset</button>
+    </div>
+    <p class="muted">If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.</p>
+  </div>
+
+  <div class="panel">
+    <h3>Log</h3>
+    <textarea id="log" readonly></textarea>
+  </div>
+
+  <!-- Import esptool-js as an ES module (official entry) -->
+  <script type="module">
+    import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.5.6/lib/index.js';
+
+    const logEl      = document.getElementById('log');
+    const connectBtn = document.getElementById('connectBtn');
+    const flashBtn   = document.getElementById('flashBtn');
+    const resetBtn   = document.getElementById('resetBtn');
+
+    let port = null;       // Web Serial port
+    let transport = null;  // esptool-js Transport
+    let loader = null;     // esptool-js ESPLoader
+    const BAUD = 460800;   // Try 921600 later if stable
+
+    const log = (msg, isErr=false) => {
+      const ts = new Date().toLocaleTimeString();
+      logEl.value += `[${ts}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      (isErr ? console.error : console.log)(msg);
+    };
+
+    // Minimal terminal for ESPLoader
+    const espTerminal = {
+      clean(){ logEl.value = ""; },
+      writeLine(s){ log(s); },
+      write(s){ log(s); }
+    };
+
+    // RTS/DTR reset to boot the flashed app (GPIO0 high, EN pulse).
+    async function hardResetToApp(){
+      if(!port) return;
+      try{
+        await port.setSignals({ dataTerminalReady: false }); // DTR=false => GPIO0 HIGH
+        await port.setSignals({ requestToSend: true  });      // RTS=true  => EN low
+        await new Promise(r => setTimeout(r, 120));
+        await port.setSignals({ requestToSend: false });      // EN high
+        log("Issued RTS/DTR reset (normal boot).");
+      }catch(e){
+        log(`Reset sequence failed: ${e?.message || e}`, true);
+      }
+    }
+
+    // Module is loaded → enable Connect
+    document.addEventListener('DOMContentLoaded', () => {
+      log("Installer script loaded (ESM). esptool-js imported.");
+      connectBtn.disabled = false;
+    });
+
+    connectBtn.onclick = async () => {
+      log("Connect clicked.");
+      connectBtn.disabled = true; // prevent double-click reentry
+      try{
+        if(!('serial' in navigator)){
+          throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
+        }
+
+        // If a previous attempt left the port open, close it first.
+        if (port && (port.readable || port.writable)) {
+          try { await port.close(); } catch {}
+        }
+
+        // 1) Prompt user for a port (user gesture)
+        port = await navigator.serial.requestPort({});
+        // 2) Open the port with options; open() throws on "already open"/invalid state
+        await port.open({ baudRate: BAUD });
+        log(`Port opened @ ${BAUD} baud.`);
+
+        transport = new Transport(port);
+        loader    = new ESPLoader(transport, BAUD, espTerminal);
+
+        await loader.connect();
+        const chip = await loader.chip;
+        log(`Connected to chip: ${chip}`);
+
+        flashBtn.disabled = false;
+        resetBtn.disabled = false;
+      }catch(e){
+        log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
+
+        // If "already open" or state error, try to close and re-enable
+        if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
+          try { await port?.close(); } catch {}
+        }
+        connectBtn.disabled = false;
+      }
+    };
+
+    flashBtn.onclick = async () => {
+      log("Flash clicked.");
+      flashBtn.disabled = true;
+      try{
+        const url = "webflash/UTAudio.bin";
+        log("Downloading " + url + " …");
+        const resp = await fetch(url, { cache: "no-cache" });
+        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        log(`Image size: ${buf.length} bytes`);
+
+        // Full erase (comment out for faster incremental updates)
+        log("Erasing…");
+        await loader.eraseFlash();
+
+        // Write merged image at 0x000000
+        log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
+        await loader.writeFlash(0x000000, buf);
+
+        log("Flash complete. Wrapping up…");
+        await hardResetToApp();
+        log("Done.");
+      }catch(e){
+        log(`Flash failed: ${e?.message || e}`, true);
+      }finally{
+        flashBtn.disabled = false;
+      }
+    };
+
+    resetBtn.onclick = async () => {
+      log("Reset clicked.");
+      await hardResetToApp();
+    };
+  </script>
+</body>
+</html>
