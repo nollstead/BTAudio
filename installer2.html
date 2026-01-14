@@ -115,6 +115,11 @@
             : () => ({ usbVendorId: undefined, usbProductId: undefined })
         }
       );
+
+      
+      console.log('[DIAG] port:', port, 'typeof getInfo:', typeof port?.getInfo, 'proto:', Object.getPrototypeOf(port)?.constructor?.name);
+      console.log('[DIAG] portShim:', portShim, 'typeof getInfo:', typeof portShim?.getInfo, 'proto:', Object.getPrototypeOf(portShim)?.constructor?.name);
+
       
       transport = new Transport(portShim);
       loader    = new ESPLoader(transport, BAUD, espTerminal);
