@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v8</h1>
+  <h1>BTAudio Firmware Uploader v9</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -141,8 +141,7 @@ async function dumpPorts(label) {
       log(`Letting ESPLoader/Transport open the port at ${BAUD} baud (skipping explicit port.open)`);
     
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
-      log(`after await getports v4`);
-           
+      log(`after await getports`);           
       
       transport = new Transport(port);
       transport.port = port; // <— add this single line
@@ -215,12 +214,14 @@ async function dumpPorts(label) {
       await loader.eraseFlash();
 
        //Write merged image at 0x000000
-      log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
+
       await loader.writeFlash({
         fileArray: [{ address: 0x000000, data: buf }],
+        flashSize: 'detect',   // NEW: or 'keep' if you prefer
+        flashMode: 'keep',     // NEW
+        flashFreq: 'keep',     // NEW
         compress: true,
         reportProgress: (fileIndex, written, total) => {
-          // optional: progress in your textarea
           if (total > 0) {
             const pct = Math.round((written / total) * 100);
             log(`Writing… ${pct}%`);
