@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v31</h1>
+  <h1>BTAudio Firmware Uploader v32</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -57,10 +57,13 @@
     const resetBtn    = document.getElementById('resetBtn');
     const disconnectBtn = document.getElementById('disconnectBtn');
 
+
     let port = null;
     let loader = null;
     let transport = null;
     let connecting = false;                 // guards against double-click races
+    let lastDisconnectAt = 0;               // timestamp used to debounce reconnects
+    const RECONNECT_DELAY_MS = 3500;        // start with 3.5s; we’ll tune down once stable
     //const BAUD = 460800;                    // can try 921600 if stable
     const BAUD = 230400;                    
 
@@ -128,6 +131,8 @@
         try { await transport?.disconnect?.(); } catch {}
         try { await loader?.flashFinish?.(false); } catch {}
       } finally {
+        Deassert control lines so the board doesn't stay half-reset on close
+        try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
         try { await port?.close(); } catch {}
         try { await port?.forget?.(); } catch {}
         try { await closeAllGrantedPorts(); } catch {}
@@ -169,6 +174,13 @@
       if (connecting) return;
       connecting = true;
       connectBtn.disabled = true;
+
+      try{
+        // Debounce: if we recently disconnected, wait the remainder to reach RECONNECT_DELAY_MS
+        const since = Date.now() - lastDisconnectAt;
+        if (since > 0 && since < RECONNECT_DELAY_MS) {
+          await sleep(RECONNECT_DELAY_MS - since);
+        }
 
       try{
         if (!('serial' in navigator)) {
