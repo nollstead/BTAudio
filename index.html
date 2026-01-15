@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v21</h1>
+  <h1>BTAudio Firmware Uploader v22</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -219,7 +219,7 @@ async function dumpPorts(label) {
       // Put device in ROM bootloader (open -> toggle DTR/RTS -> close)
       await enterBootloaderOnce();
       log('Entered bootloader mode.');
-      
+    
       // Double-check the port is closed before the loader opens it again
       if (port.readable || port.writable) {
         try { await port.close(); } catch {}
@@ -251,30 +251,36 @@ async function dumpPorts(label) {
       //log(`[DIAG] espTerminal is ${typeof espTerminal}`);
 
 
-
       
+      loader = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
+      
+      // If anything reopened the port, close before esptool-js opens it
+      if (port.readable || port.writable) {
+        try { await port.close(); } catch {}
+        await sleep(100);
+      }
+      
+      try {
+        await loader.connect();
+      } catch (firstErr) {
+        // One-shot recovery: close, re-enter bootloader, rebuild transport/loader, try once more
+        try { await port?.close(); } catch {}
+        await sleep(200);
+      
+        await enterBootloaderOnce();
+      
+        if (port.readable || port.writable) { try { await port.close(); } catch {}; await sleep(150); }
+      
+        transport = new Transport(port);
+        transport.port = port;
+        loader = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
+      
+        await loader.connect();
+      }
+      
+      const chip = await loader.chip;
+      log('Connected');
 
-loader = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
-
-try {
-  await loader.connect();
-} catch (firstErr) {
-  // One-shot recovery: close handle, re-enter bootloader, then try again
-  try { await port?.close(); } catch {}
-  await sleep(200);
-  await enterBootloaderOnce();
-  if (port.readable || port.writable) { try { await port.close(); } catch {}; await sleep(150); }
-
-  // Recreate transport/loader after re-entry to guarantee clean state
-  transport = new Transport(port);
-  transport.port = port;
-  loader = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
-
-  await loader.connect();
-}
-
-const chip = await loader.chip;
-log('Connected');
 
 
 
