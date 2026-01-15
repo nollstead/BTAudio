@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v14</h1>
+  <h1>BTAudio Firmware Uploader v15</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -207,26 +207,16 @@ async function dumpPorts(label) {
     }
       
       //log("Erasing…");
-      //await loader.eraseFlash();
+      await loader.eraseFlash();
   
-       //Write merged image at 0x000000
-      // Convert Uint8Array -> binary string using loader helper
+       //Write merged image at 0x000000  
+      // 1) Convert the Uint8Array into a binary string (documented helper)
       const bstr = loader.ui8ToBstr(buf);
       
-      await loader.writeFlash({
-        fileArray: [{ address: 0x000000, data: buf }], // merged image -> start of flash
-        flashSize: '16MB',        // explicit size for ESP32-WROOM-32E Thing Plus
-        flashMode: 'dio',         // common default for WROOM modules
-        flashFreq: '40m',         // stable default flash clock
-        compress: false,          // keep raw path to avoid string conversions
-        reportProgress: (fileIndex, written, total) => {
-          if (total > 0) {
-            const pct = Math.round((written / total) * 100);
-            log(`Writing… ${pct}%`);
-          }
-        }
-      });
-    
+      // 2) Legacy, published write signature for bundle 0.5.x:
+      //    (offset, binaryString) → uses values in the image header by default (“keep”)
+      await loader.writeFlash(0x000000, bstr);
+  
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
       log("Done.");
