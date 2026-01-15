@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -12,10 +11,7 @@
     h1{margin:0 0 8px}.muted{color:var(--muted)}
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
-    .instructions { background:#1e1e1e;border-radius:14px;padding:25px;margin-top:10px;text-align:left;box-shadow:0 0 20px rgba(0,0,0,.35) }
-    .instructions h3 { margin-top:0;font-size:1.1rem;color:#fff }
-    .instructions ol { padding-left:22px;color:#ddd }
-    .instructions li { margin:10px 0;font-size:0.95rem }
+    .instructions{background:#1e1e1e;border-radius:14px;padding:18px;margin-top:10px}
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
     button[disabled]{opacity:.55;cursor:not-allowed}
     button:hover:not([disabled]){background:var(--accent2)}
@@ -23,8 +19,8 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v39</h1>
-  <p class="muted">Version 0.0.2</p>
+  <h1>BTAudio Firmware Uploader v40</h1>
+  <p class="muted">SparkFun CH340C reset handling</p>
 
   <div class="panel">
     <div class="row">
@@ -33,18 +29,12 @@
       <button id="resetBtn"   disabled>Reset</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
-
     <div class="instructions">
-      <h3>Instructions</h3>
       <ol>
-        <li>Connect your BTAudio device to your computer via USB.</li>
-        <li>Click <strong>Connect</strong> and select the serial port (e.g., “USB‑SERIAL CH340”).</li>
-        <li>Click <strong>Upload</strong> and wait for completion.</li>
-        <li>Your device should restart automatically once the upload completes.</li>
+        <li>Click <b>Connect</b> and select the <b>USB‑SERIAL CH340</b> port.</li>
+        <li>Click <b>Upload</b> to flash. The board should reboot automatically afterward.</li>
+        <li>If connect fails, try a different USB cable or a USB‑2.0 port and retry.</li>
       </ol>
-      <p class="note">
-        If your device doesn’t auto‑enter flash mode, press and hold the <b>BOOT</b> button while tapping <b>RESET</b>, then click Connect.
-      </p>
     </div>
   </div>
 
@@ -53,14 +43,16 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Robust Web Serial + esptool-js script -->
+  <!-- Static import of a version-pinned bundle -->
   <script type="module">
-  (async () => {
-    // --- DOM handles & logging ---
-    const logEl         = document.getElementById('log');
-    const connectBtn    = document.getElementById('connectBtn');
-    const flashBtn      = document.getElementById('flashBtn');
-    const resetBtn      = document.getElementById('resetBtn');
+    import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+    const { ESPLoader, Transport } = esptool;
+
+    // --- DOM & log -----------------------------------------------------------
+    const logEl = document.getElementById('log');
+    const connectBtn = document.getElementById('connectBtn');
+    const flashBtn = document.getElementById('flashBtn');
+    const resetBtn = document.getElementById('resetBtn');
     const disconnectBtn = document.getElementById('disconnectBtn');
 
     const log = (m, e=false) => {
@@ -70,39 +62,15 @@
       (e ? console.error : console.log)(m);
     };
 
-    // --- Dynamic import with fallback (prevents "silent" page when CDN fails) ---
-    let esptool;
-    try {
-      esptool = await import('https://unpkg.com/esptool-js@0.5.7/bundle.js');
-    } catch (e1) {
-      try {
-        esptool = await import('https://cdn.jsdelivr.net/npm/esptool-js@0.5.7/bundle.js');
-      } catch (e2) {
-        log(`Failed to load esptool-js: ${e2?.message || e2}`, true);
-        return; // abort: cannot proceed without esptool-js
-      }
-    }
-    const { ESPLoader, Transport } = esptool;
-    log('esptool-js loaded.');
-
-    // --- State & config ---
-    let port = null;
-    let loader = null;
-    let transport = null;
-    let connecting = false;
-    let lastDisconnectAt = Date.now() - (60 * 60 * 1000); // ensure no initial wait
-    const RECONNECT_DELAY_MS = 5000;  // tune down later once stable
-    const BAUD = 115200;              // conservative first sync for CH340C
+    // --- State & constants ---------------------------------------------------
+    let port = null, loader = null, transport = null, connecting = false;
+    let lastDisconnectAt = Date.now() - (60*60*1000);
+    const RECONNECT_DELAY_MS = 5000;
+    const BAUD = 115200; // safer first sync on CH340C
+    const CH340_FILTERS = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }];
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-    // Some Windows usbser.sys + CH340C stacks need double-set of control lines
-    async function setSignalsTwice(dtr, rts) {
-      try { await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }); } catch {}
-      try { await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }); } catch {}
-    }
-
-    // Close any previously granted ports (same origin) that might still be open.
     async function closeAllGrantedPorts() {
       try {
         const granted = await navigator.serial.getPorts();
@@ -110,48 +78,40 @@
       } catch {}
     }
 
-    // --- SparkFun CH340C auto-reset sequences (per their schematic) ---
-    // Bootloader: "If RTS is HIGH, toggling DTR from LOW to HIGH resets to BOOTLOADER."
+    // --- SparkFun CH340C reset sequences (from their schematic note) ---------
+    // Bootloader: RTS HIGH, DTR LOW->HIGH
     async function enterBootloaderSparkfun() {
       if (!port) return;
       await port.open({ baudRate: BAUD }).catch(()=>{});
       try {
-        // Ensure RTS HIGH (requestToSend=false)
-        await port.setSignals({ requestToSend: false });
+        await port.setSignals({ requestToSend: false });     // RTS HIGH
         await sleep(20);
-
-        // DTR LOW -> HIGH pulse
-        await port.setSignals({ dataTerminalReady: true  });  // DTR LOW
+        await port.setSignals({ dataTerminalReady: true  }); // DTR LOW
         await sleep(120);
-        await port.setSignals({ dataTerminalReady: false });  // DTR HIGH
+        await port.setSignals({ dataTerminalReady: false }); // DTR HIGH (edge)
         await sleep(80);
-
-        // Leave both deasserted
         await port.setSignals({ dataTerminalReady: false, requestToSend: false });
       } finally {
         try { await port.close(); } catch {}
       }
-      await sleep(200); // CH340C settle
+      await sleep(200);
     }
 
-    // Normal run: "If DTR is LOW, toggling RTS from HIGH to LOW resets to RUN mode."
+    // Normal run: DTR LOW, RTS HIGH->LOW pulse
     async function hardResetToApp() {
       if (!port) return;
       await port.open({ baudRate: BAUD }).catch(()=>{});
       try {
-        await port.setSignals({ dataTerminalReady: true  });  // DTR LOW (hold)
-        await port.setSignals({ requestToSend: false });      // RTS HIGH (start)
+        await port.setSignals({ dataTerminalReady: true  }); // DTR LOW (hold)
+        await port.setSignals({ requestToSend: false });     // RTS HIGH
         await sleep(40);
-
-        await port.setSignals({ requestToSend: true  });      // RTS LOW pulse
+        await port.setSignals({ requestToSend: true  });     // RTS LOW pulse
         await sleep(120);
-
-        // Release
-        await port.setSignals({ requestToSend: false });      // RTS HIGH
-        await port.setSignals({ dataTerminalReady: false });  // DTR HIGH
-        log("Normal reset issued (SparkFun run mode).");
+        await port.setSignals({ requestToSend: false });     // RTS HIGH
+        await port.setSignals({ dataTerminalReady: false }); // DTR HIGH
+        log('Normal reset (SparkFun run mode).');
       } catch(e) {
-        log(`Reset sequence failed: ${e?.message || e}`, true);
+        log(`Reset failed: ${e?.message || e}`, true);
       } finally {
         try { await port.close(); } catch {}
       }
@@ -164,8 +124,7 @@
         try { await loader?.flashFinish?.(false); } catch {}
       } finally {
         try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
-        try { await port?.close(); } catch {}
-        try { await closeAllGrantedPorts(); } catch {}
+        try { await port?.close?.(); } catch {}
         await sleep(150);
         loader = null; transport = null; port = null;
 
@@ -174,15 +133,12 @@
         resetBtn.disabled = true;
         disconnectBtn.disabled = true;
 
-        log("Disconnected and port closed.");
-        await sleep(200);
-        connectBtn.focus();
+        log('Disconnected and port closed.');
         lastDisconnectAt = Date.now();
       }
     }
     disconnectBtn.onclick = disconnectClean;
 
-    // Auto-clean if the cable is pulled
     navigator.serial?.addEventListener?.('disconnect', async (e) => {
       if (port && e.target === port) {
         log('Device disconnected.');
@@ -190,31 +146,27 @@
       }
     });
 
-    // --- Connect flow ---
+    // --- Connect flow --------------------------------------------------------
     connectBtn.onclick = async () => {
       if (connecting) return;
       connecting = true;
       connectBtn.disabled = true;
 
       try {
-        // Debounce after a recent disconnect
         const since = Date.now() - lastDisconnectAt;
         if (since > 0 && since < RECONNECT_DELAY_MS) {
           await sleep(RECONNECT_DELAY_MS - since);
         }
 
         if (!('serial' in navigator)) {
-          throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
+          throw new Error('WebSerial not available. Use Chrome/Edge over HTTPS.');
         }
 
-        // Close lingering same-origin ports
         await closeAllGrantedPorts();
         await sleep(100);
 
-        // Choose CH340C by VID/PID first; fall back to generic chooser
-        const filters = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }]; // CH340C
         try {
-          port = await navigator.serial.requestPort({ filters });
+          port = await navigator.serial.requestPort({ filters: CH340_FILTERS });
         } catch (e) {
           if (String(e?.name) === 'NotFoundError') {
             port = await navigator.serial.requestPort({});
@@ -224,145 +176,103 @@
         }
         log('Port selected.');
 
-        // Ensure closed, then run SparkFun bootloader entry
+        // Ensure closed, then SparkFun bootloader entry
         try { await port.close(); } catch {}
-        await sleep(120);
+        await sleep(100);
+        await enterBootloaderSparkfun();
 
-        await enterBootloaderSparkfun();  // <-- key difference for SparkFun CH340C
-        await sleep(120);
+        // Build transport/loader
+        transport = new Transport(port, false, false);
 
-        // Build transport/loader; esptool-js will open on connect()
-        transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
-        loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: { 
-          clean(){ logEl.value = ""; }, 
-          writeLine(s){ log(s); }, 
-          write(s){ log(s); } 
-        }});
+        // ---- IMPORTANT: prevent esptool-js from doing its default "before" reset ----
+        // A) Provide a no-op classic reset via resetConstructors (defensive fallback)
+        const loaderOptions = {
+          transport,
+          baudrate: BAUD,
+          terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } },
+          resetConstructors: {
+            classicReset: (t, delayMs) => ({
+              async run() { await sleep(delayMs ?? 100); } // no-op; don't toggle DTR/RTS
+            })
+          }
+        };
+        loader = new ESPLoader(loaderOptions);
 
-        // Make sure nothing is left open
+        // B) If this build exposes reset mode flags, set 'before' to no_reset (doc: Before types)
+        try { loader.before = 'no_reset'; } catch {}
+
+        // Make sure nothing is open before connect
         if (port.readable || port.writable) {
           try { await transport?.disconnect?.(); } catch {}
           try { await port.close(); } catch {}
           await sleep(150);
         }
 
-        // Try to sync
-        await loader.connect();
+        await loader.connect();  // should sync without library doing its own reset
 
-        // Success
         const chip = await loader.chip;
         log(`Connected (${chip})`);
-        flashBtn.disabled = true;  // enable only when image is ready to flash
         resetBtn.disabled = false;
         disconnectBtn.disabled = false;
+        flashBtn.disabled = false;
 
-        // If you want a serial monitor state here, you'd open streams now (not needed for flashing).
+      } catch (e) {
+        log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
 
-      } catch (firstErr) {
-        log(`First connect failed: ${firstErr?.message || firstErr}`, true);
-
-        // Recovery path: force cleanup, 1200-bps nudge, try again (SparkFun boot)
         try { await transport?.disconnect?.(); } catch {}
         try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
         try { await port?.close(); } catch {}
         await sleep(150);
 
-        try {
-          await port.open({ baudRate: 1200 });
-          await sleep(100);
-          await port.close();
-          await sleep(150);
-        } catch {}
-
-        await enterBootloaderSparkfun();
-        await sleep(150);
-
-        transport = new Transport(port, false, false);
-        loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: { 
-          clean(){ logEl.value = ""; }, 
-          writeLine(s){ log(s); }, 
-          write(s){ log(s); } 
-        }});
-
-        if (port.readable || port.writable) {
-          try { await transport?.disconnect?.(); } catch {}
-          try { await port.close(); } catch {}
-          await sleep(150);
-        }
-
-        try {
-          await loader.connect();
-          const chip = await loader.chip;
-          log(`Connected after recovery (${chip})`);
-          flashBtn.disabled = true;
-          resetBtn.disabled = false;
-          disconnectBtn.disabled = false;
-        } catch (e2) {
-          // Give up this round; leave UI in a sane state
-          log(`Connect failed: ${e2?.name ? e2.name+': ' : ''}${e2?.message || e2}`, true);
-          try { await transport?.disconnect?.(); } catch {}
-          try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
-          try { await port?.close(); } catch {}
-          await sleep(150);
-          try { await closeAllGrantedPorts(); } catch {}
-
-          flashBtn.disabled = true;
-          resetBtn.disabled = true;
-          disconnectBtn.disabled = true;
-          connectBtn.disabled = false;
-        }
+        flashBtn.disabled = true;
+        resetBtn.disabled = true;
+        disconnectBtn.disabled = true;
+        connectBtn.disabled = false;
       } finally {
         connecting = false;
       }
     };
 
-    // --- Flash flow (single-binary example) ---
+    // --- Flash flow (single image example) -----------------------------------
     flashBtn.onclick = async () => {
       flashBtn.disabled = true;
       try {
-        const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
+        const resp = await fetch('webflash/UTAudio.bin', { cache: 'no-cache' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const buf = new Uint8Array(await resp.arrayBuffer());
         log(`Image size: ${buf.length} bytes`);
 
-        // Load stub if needed for faster/more reliable writes
         try {
           if (!loader.IS_STUB) {
-            log("Running stub…");
+            log('Running stub…');
             await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
-            log("Stub ready.");
+            log('Stub ready.');
           } else {
-            log("Stub already running — skipping stub load.");
+            log('Stub already running — skipping stub load.');
           }
         } catch (e) {
-          const msg = String(e?.message || e);
-          if (/software loader is resident|overlapping address range/i.test(msg)) {
-            log("Stub already resident — continuing without reloading.");
-          } else {
-            log("Stub failed (continuing with ROM bootloader): " + msg, true);
-          }
+          log(`Stub load failed: ${e?.message || e} (continuing)`, true);
         }
 
         await loader.eraseFlash();
 
-        // Convert Uint8Array -> binary string for esptool-js@0.5.7 browser bundle
         let bstr = '';
         for (let i = 0; i < buf.length; i++) bstr += String.fromCharCode(buf[i]);
 
         await loader.writeFlash({
           fileArray: [{ address: 0x000000, data: bstr }],
-          flashSize: '16MB',     // adjust to your module if needed
+          flashSize: '16MB',
           flashMode: 'keep',
           flashFreq: 'keep',
           compress: true,
-          reportProgress: (fileIndex, written, total) => {
+          reportProgress: (idx, written, total) => {
             if (total > 0) log(`Writing… ${Math.round((written/total)*100)}%`);
           }
         });
 
-        log("Flash complete. Wrapping up…");
+        log('Flash complete. Resetting…');
         await hardResetToApp();
-        log("Done.");
+        log('Done.');
         await disconnectClean();
 
       } catch (e) {
@@ -371,22 +281,15 @@
       }
     };
 
-    resetBtn.onclick = async () => {
-      await hardResetToApp();
-    };
+    resetBtn.onclick = async () => { await hardResetToApp(); };
 
-    // Release the port on tab close/reload so a fresh load doesn't inherit a locked handle
     window.addEventListener('unload', () => {
       try { transport?.disconnect?.(); } catch {}
       try { port?.close?.(); } catch {}
     });
 
-    // Initial enablement
-    log("Installer script loaded.");
+    log('Installer script loaded.');
     connectBtn.disabled = !(Transport && ESPLoader);
-    // Optionally enable Upload immediately if your binary is always present
-    flashBtn.disabled = false;
-  })();
   </script>
 </body>
 </html>
