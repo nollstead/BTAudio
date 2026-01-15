@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v19</h1>
+  <h1>BTAudio Firmware Uploader v20</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -80,6 +80,52 @@
     writeLine(s){ log(s); },
     write(s){ log(s); }
   };
+
+   // small delay util
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // Windows usbser.sys sometimes needs the control lines set twice (RTS quirk)
+  // Ref: WICG/serial issue #173
+  async function setSignalsTwice(dtr, rts) {
+    await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }).catch(()=>{});
+    await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }).catch(()=>{});
+  }
+
+  /**
+   * Force ROM bootloader using DTR/RTS:
+   * - DTR  -> GPIO0 (active-low)
+   * - RTS  -> EN (active-low)
+   * Hold GPIO0 low while pulsing EN, then release GPIO0.
+   * Web Serial requires the port to be OPEN for setSignals().
+   */
+  async function enterBootloaderOnce() {
+    if (!port) return;
+
+    // Open the port to allow setSignals() (per Web Serial spec/MDN)
+    if (!port.readable && !port.writable) {
+      await port.open({ baudRate: BAUD });
+    }
+
+    try {
+      // GPIO0=LOW (DTR=true), EN=LOW (RTS=true)
+      await setSignalsTwice(true,  true);
+      await sleep(80);
+
+      // EN=HIGH (RTS=false), keep GPIO0 LOW (DTR=true)
+      await setSignalsTwice(true,  false);
+      await sleep(80);
+
+      // Release GPIO0 (DTR=false), EN stays HIGH
+      await setSignalsTwice(false, false);
+      await sleep(50);
+    } finally {
+      try { await port.close(); } catch {}
+    }
+
+    // Small settle for CH340/driver
+    await sleep(150);
+  }
+
 
 async function disconnectClean() {
   try {
@@ -153,13 +199,17 @@ async function dumpPorts(label) {
       // Close lingering port if any
       if (port && (port.readable || port.writable)) { try { await port.close(); } catch {} }
 
+      
       // User picks a port (user gesture required)
       port = await navigator.serial.requestPort({});
-      log(`Letting ESPLoader/Transport open the port at ${BAUD} baud (skipping explicit port.open)`);
-    
+      
+      // Put device in ROM bootloader (open -> toggle DTR/RTS -> close)
+      await enterBootloaderOnce();
+      log('Entered bootloader mode.');
+
       //await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
       // tiny settle helps CH340/driver after selection
-      await new Promise(r => setTimeout(r, 150));
+      //await new Promise(r => setTimeout(r, 150));
       
       transport = new Transport(port);
       transport.port = port; // <— add this single line
