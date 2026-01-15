@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v29</h1>
+  <h1>BTAudio Firmware Uploader v30</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -137,6 +137,7 @@
         resetBtn.disabled = true;
         disconnectBtn.disabled = true;
         log("Disconnected and port closed.");
+        await sleep(200); // small settle so the next connect starts clean on CH340
         connectBtn.focus();
       }
     }
@@ -207,29 +208,40 @@ if (port.readable || port.writable) {
   await sleep(150);
 }
           await loader.connect(); // esptool-js calls port.open() internally
-        } catch (firstErr) {
-          // Recovery: try bootloader entry once and reconnect
-          log(`First connect failed: ${firstErr?.message || firstErr}`, true);
-          try { await port?.close(); } catch {}
-          await sleep(200);
 
-          await enterBootloaderOnce();
+} catch (firstErr) {
+  // Recovery: forced cleanup + 1200-bps nudge + bootloader entry (once), then reconnect
+  log(`First connect failed: ${firstErr?.message || firstErr}`, true);
 
-          try { await port?.close(); } catch {}
-          await sleep(150);
-
-          transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
-          loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
-
-
-// Ensure the port is really closed before esptool-js opens it
-if (port.readable || port.writable) {
+  // 1) Force unlock/close anything the browser still thinks is open
   try { await transport?.disconnect?.(); } catch {}
-  try { await port.close(); } catch {}
+  try { await port?.close(); } catch {}
   await sleep(150);
+
+  // 2) CH340 nudge: open/close at 1200 bps to clear stale driver state
+  try {
+    await port.open({ baudRate: 1200 });
+    await sleep(100);
+    await port.close();
+    await sleep(150);
+  } catch {}
+
+  // 3) Try the bootloader entry once (safe if already in bootloader)
+  await enterBootloaderOnce();
+
+  // 4) Rebuild transport/loader for a clean state
+  transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
+  loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
+
+  // 5) Make sure nothing is still open before esptool-js opens it
+  if (port.readable || port.writable) {
+    try { await transport?.disconnect?.(); } catch {}
+    try { await port.close(); } catch {}
+    await sleep(150);
+  }
+
+  await loader.connect();
 }
-          await loader.connect();
-        }
 
         const chip = await loader.chip;
         log('Connected');
@@ -240,12 +252,18 @@ if (port.readable || port.writable) {
       } catch (e) {
         log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
 
-        // Unwind state so the next attempt starts clean
-        try { await transport?.disconnect?.(); } catch {}
-        try { await port?.close(); } catch {}
-        await sleep(150);
 
-        connectBtn.disabled = false;
+// Unwind state so the next attempt starts clean
+try { await transport?.disconnect?.(); } catch {}
+try { await port?.close(); } catch {}
+await sleep(150);
+try { await closeAllGrantedPorts(); } catch {}
+
+// Reset UI (avoid "all grey" state after quick-fail)
+flashBtn.disabled = true;
+resetBtn.disabled = true;
+disconnectBtn.disabled = true;
+connectBtn.disabled = false;
       } finally {
         connecting = false;
       }
