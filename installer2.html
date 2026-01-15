@@ -1,11 +1,9 @@
-
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Nollstead Studio BTAudio – Firmware Uploader</title>
-
   
   <script type="importmap">
   {
@@ -32,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v6</h1>
+  <h1>BTAudio Firmware Uploader v7</h1>
   <p class="muted">Version 0.0.1 • Nollstead Studio BTAudio</p>
 
   <div class="panel">
@@ -166,7 +164,9 @@ async function dumpPorts(label) {
       //log(`[DIAG] transport.getInfo is ${typeof transport.getInfo}`);
       //log(`[DIAG] espTerminal is ${typeof espTerminal}`);
       
-      loader    = new ESPLoader(transport, BAUD, espTerminal);
+      //loader    = new ESPLoader(transport, BAUD, espTerminal);
+      loader = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
+      
       log(`after loader initialized`);
 
       await loader.connect();
@@ -214,7 +214,7 @@ async function dumpPorts(label) {
       log("Erasing…");
       await loader.eraseFlash();
 
-       Write merged image at 0x000000
+       //Write merged image at 0x000000
       log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
       await loader.writeFlash({
         fileArray: [{ address: 0x000000, data: buf }],
