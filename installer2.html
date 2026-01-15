@@ -180,7 +180,10 @@ console.log('[DIAG] port own keys:', Object.getOwnPropertyNames(port));
       
       transport = new Transport(port);
 log(`after new transport`);
+transport.port = port; // <— add this single line
+log(`after new transport`);
 
+      
 if (typeof transport.getInfo !== 'function') transport.getInfo = () => ({ usbVendorId: undefined, usbProductId: undefined });
 
 // Ensure transport.getInfo() exists (some bundles call it in ESPLoader ctor)
@@ -197,6 +200,7 @@ if (typeof transport.getInfo !== 'function') {
 }
 log(`after getinfo check`);
 log(`[DIAG] transport.getInfo is ${typeof transport.getInfo}`);
+log(`[DIAG] espTerminal is ${typeof espTerminal}`);
       
       loader    = new ESPLoader(transport, BAUD, espTerminal);
 log(`after loader initialized`);
