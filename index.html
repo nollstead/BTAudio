@@ -48,7 +48,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v35</h1>
+  <h1>BTAudio Firmware Uploader v36</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -97,9 +97,8 @@
   let transport = null;
   let connecting = false;  // guard against double-click races
   let lastDisconnectAt = Date.now() - (60 * 60 * 1000); // 1 hour ago: ensures no wait on first connect
-  const RECONNECT_DELAY_MS = 3500;                      // tune down later once stable
-  // const BAUD = 460800;                                // can try 921600 if rock solid
-  const BAUD = 230400;
+  const RECONNECT_DELAY_MS = 5000;                      // tune down later once stable
+  const BAUD = 115200;
 
   const log = (m, e=false) => {
     const ts = new Date().toLocaleTimeString();
@@ -234,17 +233,21 @@
           throw e;
         }
       }
-      log('Port selected.');
 
-      // Force closed state before esptool-js touches it (driver stickiness)
+      log('Port selected.');      
+      // Force closed state before we do anything
       try { await port.close(); } catch {}
-      await sleep(100);
-
+      await sleep(120);
+      
+      // *** NEW: Proactively enter ROM bootloader so esptool-js syncs reliably ***
+      await enterBootloaderOnce();
+      // Small settle to avoid CH341 “present but unresponsive”
+      await sleep(250);
+      
       // Build transport/loader. Do NOT open here — esptool-js will open during connect().
       transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
       loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
-
-      // Try connect
+      
       try {
         // Ensure the port is really closed before esptool-js opens it
         if (port.readable || port.writable) {
@@ -253,6 +256,7 @@
           await sleep(150);
         }
         await loader.connect(); // esptool-js calls port.open() internally
+
       } catch (firstErr) {
         // Recovery: forced cleanup + 1200-bps nudge + bootloader entry (once), then reconnect
         log(`First connect failed: ${firstErr?.message || firstErr}`, true);
@@ -299,6 +303,7 @@
 
       // Unwind state so the next attempt starts clean
       try { await transport?.disconnect?.(); } catch {}
+      try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
       try { await port?.close(); } catch {}
       await sleep(150);
       try { await closeAllGrantedPorts(); } catch {}
