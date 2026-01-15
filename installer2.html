@@ -143,26 +143,7 @@ try {
   console.log('[DUMP] port.getInfo() threw:', e);
 }
 await dumpPorts('after open');
-
-// --- DEBUG: isolate where failure happens
-try {
-  transport = new Transport(port);               // <— keep using the real port (as you already do)
-  log('DEBUG: Transport created.');
-} catch (e) {
-  log(`DEBUG: Transport ctor failed: ${e?.message || e}`, true);
-  console.error('[STACK] Transport ctor failed:', e);
-  throw e; // rethrow to trigger your existing catch/log
-}
-
-try {
-  loader = new ESPLoader(transport, BAUD, espTerminal);
-  log('DEBUG: ESPLoader created.');
-} catch (e) {
-  log(`DEBUG: ESPLoader ctor failed: ${e?.message || e}`, true);
-  console.error('[STACK] ESPLoader ctor failed:', e);
-  throw e;
-}
-
+      
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
             
       /// Robust shim: guarantee getInfo() exists AND keep the same prototype/shape as the real port
