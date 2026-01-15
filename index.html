@@ -18,6 +18,29 @@
     h1{margin:0 0 8px}.muted{color:var(--muted)}
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+    .instructions {
+      background: #1e1e1e;
+      border-radius: 14px;
+      padding: 25px;
+      margin-top: 35px;
+      text-align: left;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
+    }
+        .instructions h3 {
+      margin-top: 0;
+      font-size: 1.3rem;
+      color: #fff;
+    }
+
+    .instructions ol {
+      padding-left: 22px;
+      color: #ddd;
+    }
+
+    .instructions li {
+      margin: 10px 0;
+      font-size: 1rem;
+    }
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
     button[disabled]{opacity:.55;cursor:not-allowed}
     button:hover:not([disabled]){background:var(--accent2)}
@@ -25,19 +48,32 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v33</h1>
+  <h1>BTAudio Firmware Uploader v34</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
     <div class="row">
-      <button id="connectBtn" disabled>1) Connect</button>
-      <button id="flashBtn"   disabled>2) Upload</button>
-      <button id="resetBtn"   disabled>3) Reset</button>
-      <button id="disconnectBtn" disabled>4) Disconnect</button>
+      <button id="connectBtn" disabled>Connect</button>
+      <button id="flashBtn"   disabled>Upload</button>
+      <button id="resetBtn"   disabled>Reset</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
-    <p class="muted">
-      If it doesn’t auto‑reboot, click <b>Reset</b> or press the board’s <b>RESET (EN)</b> button.
+  <div class="instructions">
+    <h3>Instructions</h3>
+    <ol>
+      <li>Connect your BT Audio device to your computer via USB.</li>
+      <li>Click <strong>Open ESP Launchpad</strong> above.</li>
+      <li>Select the serial port (e.g., “USB‑SERIAL CH340”).</li>
+      <li>Choose the firmware version shown in Launchpad.</li>
+      <li>Click <strong>Flash</strong> and wait for completion.</li>
+      <li>Your device will restart automatically.</li>
+    </ol>
+
+    <p class="note">
+      Note: If your device doesn’t auto‑enter flash mode, press and hold the BOOT button while connecting, 
+      or when prompted during flashing.
     </p>
+  </div>
   </div>
 
   <div class="panel">
