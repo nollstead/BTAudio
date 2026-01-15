@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -19,8 +20,8 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v43</h1>
-  <p class="muted">SparkFun CH340C reset handling</p>
+  <h1>BTAudio Firmware Uploader v45</h1>
+  <p class="muted">Re‑plug to connect (no BOOT/RESET buttons required)</p>
 
   <div class="panel">
     <div class="row">
@@ -28,14 +29,14 @@
       <button id="flashBtn"   disabled>Upload</button>
       <button id="resetBtn"   disabled>Reset</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
-      <button id="probeBtn">Probe DTR/RTS</button>
     </div>
     <div class="instructions">
       <ol>
-        <li>Click <b>Connect</b> and select the <b>USB‑SERIAL</b> port.</li>
-        <li>Click <b>Upload</b> to flash. The board should reboot automatically afterward.</li>
-        <li>If connect fails, try a different USB cable or a USB‑2.0 port and retry.</li>
+        <li>Click <b>Connect</b>. The page will ask you to <b>unplug</b> the device, then <b>plug it back in</b>.</li>
+        <li>Select the <b>USB‑SERIAL</b> port when prompted.</li>
+        <li>Click <b>Upload</b> to flash. The board will restart automatically afterward.</li>
       </ol>
+      <p class="muted">Tip: If a connection ever fails, simply unplug and re‑plug, then click Connect again.</p>
     </div>
   </div>
 
@@ -44,12 +45,12 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Static import of a version-pinned bundle -->
+  <!-- Static import of a version-pinned esptool-js bundle -->
   <script type="module">
     import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
     const { ESPLoader, Transport } = esptool;
 
-    // --- DOM & log -----------------------------------------------------------
+    // ---- DOM & log ----
     const logEl = document.getElementById('log');
     const connectBtn = document.getElementById('connectBtn');
     const flashBtn = document.getElementById('flashBtn');
@@ -63,124 +64,24 @@
       (e ? console.error : console.log)(m);
     };
 
-    // --- State & constants ---------------------------------------------------
+    // ---- State & constants ----
     let port = null, loader = null, transport = null, connecting = false;
-    let lastDisconnectAt = Date.now() - (60*60*1000);
-    const RECONNECT_DELAY_MS = 5000;
-    const BAUD = 115200; // safer first sync on CH340C
-    const CH340_FILTERS = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }];
+    let waitingForReplug = false, sawDisconnect = false;
 
+    const BAUD = 115200;  // conservative first sync on CH340C
+    const CH340_FILTERS = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }];
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-    async function closeAllGrantedPorts() {
-      try {
-        const granted = await navigator.serial.getPorts();
-        for (const p of granted) { try { await p.close(); } catch {} }
-      } catch {}
-    }
-
-
-const probeBtn = document.getElementById('probeBtn');
-
-/**
- * Raw Web Serial DTR/RTS probe: open -> toggle -> close.
- * Watch edge://device-log (Serial + USB filters) for "control line changed".
- */
-probeBtn.onclick = async () => {
-  try {
-    const p = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }] });
-    await p.open({
-      baudRate: 115200,
-      dataBits: 8,
-      stopBits: 1,
-      parity: 'none',
-      flowControl: 'none'
+    // Track OS-level disconnects during the re-plug flow
+    navigator.serial?.addEventListener?.('disconnect', () => {
+      if (waitingForReplug) sawDisconnect = true;
     });
-    log('PROBE: port opened');
-
-    // DTR: LOW->HIGH (assert->deassert)
-    await p.setSignals({ dataTerminalReady: true });
-    log('PROBE: DTR=TRUE (LOW)');
-    await sleep(150);
-    await p.setSignals({ dataTerminalReady: false });
-    log('PROBE: DTR=FALSE (HIGH)');
-    await sleep(150);
-
-    // RTS: HIGH->LOW->HIGH (deassert->assert->deassert)
-    await p.setSignals({ requestToSend: false });
-    log('PROBE: RTS=FALSE (HIGH)');
-    await sleep(150);
-    await p.setSignals({ requestToSend: true });
-    log('PROBE: RTS=TRUE (LOW)');
-    await sleep(150);
-    await p.setSignals({ requestToSend: false });
-    log('PROBE: RTS=FALSE (HIGH)');
-
-    await p.close();
-    log('PROBE: port closed');
-  } catch (e) {
-    log('PROBE ERROR: ' + (e?.message || e), true);
-  }
-};
-
-// SparkFun boot entry using esptool-js Transport + CustomReset
-// Sequence per SparkFun note: RTS HIGH (R0), DTR LOW->HIGH (D1 -> W -> D0)
-async function enterBootloaderSparkfun_viaTransport() {
-  if (!port) return;
-
-  // Build a temporary Transport and OPEN it to be able to toggle lines
-  const tmpTransport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
-
-  try {
-    await tmpTransport.connect(BAUD);
-
-    // Use esptool-js custom reset string (active-low semantics):
-    // R0 (RTS=HIGH), D1 (DTR=LOW), W120, D0 (DTR=HIGH), W80
-    const seq = 'R0|D1|W120|D0|W80';
-
-    // CustomReset class exposes .reset()
-    const custom = new esptool.CustomReset(tmpTransport, seq);
-    await custom.reset();
-
-    // leave both deasserted (safety)
-    await tmpTransport.setRTS(false); // RTS HIGH (deassert)
-    await tmpTransport.setDTR(false); // DTR HIGH (deassert)
-
-  } finally {
-    // CLOSE the temporary Transport so we start fresh for loader.connect()
-    try { await tmpTransport.disconnect(); } catch {}
-    await sleep(200);
-  }
-}
-
-
-    // Normal run: DTR LOW, RTS HIGH->LOW pulse
-    async function hardResetToApp() {
-      if (!port) return;
-      await port.open({ baudRate: BAUD }).catch(()=>{});
-      try {
-        await port.setSignals({ dataTerminalReady: true  }); // DTR LOW (hold)
-        await port.setSignals({ requestToSend: false });     // RTS HIGH
-        await sleep(40);
-        await port.setSignals({ requestToSend: true  });     // RTS LOW pulse
-        await sleep(120);
-        await port.setSignals({ requestToSend: false });     // RTS HIGH
-        await port.setSignals({ dataTerminalReady: false }); // DTR HIGH
-        log('Normal reset (SparkFun run mode).');
-      } catch(e) {
-        log(`Reset failed: ${e?.message || e}`, true);
-      } finally {
-        try { await port.close(); } catch {}
-      }
-      await sleep(200);
-    }
 
     async function disconnectClean() {
       try {
         try { await transport?.disconnect?.(); } catch {}
         try { await loader?.flashFinish?.(false); } catch {}
       } finally {
-        try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
         try { await port?.close?.(); } catch {}
         await sleep(150);
         loader = null; transport = null; port = null;
@@ -191,77 +92,51 @@ async function enterBootloaderSparkfun_viaTransport() {
         disconnectBtn.disabled = true;
 
         log('Disconnected and port closed.');
-        lastDisconnectAt = Date.now();
       }
     }
     disconnectBtn.onclick = disconnectClean;
 
-    navigator.serial?.addEventListener?.('disconnect', async (e) => {
-      if (port && e.target === port) {
-        log('Device disconnected.');
-        await disconnectClean();
-      }
-    });
-
-    // --- Connect flow --------------------------------------------------------
+    // ---- Connect: re-plug to get a clean first open, then let esptool-js do the default reset ----
     connectBtn.onclick = async () => {
       if (connecting) return;
       connecting = true;
       connectBtn.disabled = true;
 
       try {
-        const since = Date.now() - lastDisconnectAt;
-        if (since > 0 && since < RECONNECT_DELAY_MS) {
-          await sleep(RECONNECT_DELAY_MS - since);
-        }
-
         if (!('serial' in navigator)) {
           throw new Error('WebSerial not available. Use Chrome/Edge over HTTPS.');
         }
 
-        await closeAllGrantedPorts();
-        await sleep(100);
+        // Ask the user to physically re-plug the device to get a clean enumeration
+        waitingForReplug = true;
+        sawDisconnect = false;
+        log('Please UNPLUG the device now… waiting up to 15s.');
+        {
+          const start = Date.now();
+          while (!sawDisconnect && (Date.now() - start) < 15000) {
+            await sleep(100);
+          }
+          if (!sawDisconnect) throw new Error('No disconnect detected. Unplug the cable, then try again.');
+        }
+
+        log('Great. Now PLUG IT BACK IN and select the port when prompted…');
+        await sleep(600);  // small grace for enumeration
 
         try {
           port = await navigator.serial.requestPort({ filters: CH340_FILTERS });
         } catch (e) {
-          if (String(e?.name) === 'NotFoundError') {
-            port = await navigator.serial.requestPort({});
-          } else {
-            throw e;
-          }
+          // If the chooser was cancelled or port selection failed:
+          throw e;
         }
-
         log('Port selected.');
-        
-        // Ensure closed (safety), then SparkFun bootloader entry via Transport
-        try { await port.close(); } catch {}
-        await sleep(100);
-        await enterBootloaderSparkfun_viaTransport();   // <-- new helper above
-        await sleep(120);
 
-        // Build transport/loader
-        transport = new Transport(port, false, false);
-
-
-       
-const loaderOptions = {
-  transport,
-  baudrate: BAUD,
-  terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } },
-
-  // No-op reset strategies: esptool-js will call .reset(), so provide it
-  resetConstructors: {
-    classicReset: (t, delayMs) => ({ async reset(){ await sleep(delayMs ?? 100); } }),
-    hardReset:   (t /*, usingUsbOtg */) => ({ async reset(){ /* no-op */ } }),
-    usbJTAGSerialReset: (t) => ({ async reset(){ /* no-op */ } }),
-    customReset: (t, seq) => ({ async reset(){ /* no-op */ } }),
-  }
-};
-
-loader = new ESPLoader(loaderOptions);
-try { loader.before = 'no_reset'; } catch {}
-
+        // Build transport/loader and connect — use esptool-js default reset strategy
+        transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
+        loader = new ESPLoader({
+          transport,
+          baudrate: BAUD,
+          terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } }
+        });
 
         // Make sure nothing is open before connect
         if (port.readable || port.writable) {
@@ -270,20 +145,18 @@ try { loader.before = 'no_reset'; } catch {}
           await sleep(150);
         }
 
-        await loader.connect();  // should sync without library doing its own reset
+        await loader.connect();  // esptool-js performs the standard DevKit-style auto-reset here
 
         const chip = await loader.chip;
         log(`Connected (${chip})`);
+        flashBtn.disabled = false;
         resetBtn.disabled = false;
         disconnectBtn.disabled = false;
-        flashBtn.disabled = false;
 
       } catch (e) {
         log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
-
         try { await transport?.disconnect?.(); } catch {}
-        try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
-        try { await port?.close(); } catch {}
+        try { await port?.close?.(); } catch {}
         await sleep(150);
 
         flashBtn.disabled = true;
@@ -291,11 +164,12 @@ try { loader.before = 'no_reset'; } catch {}
         disconnectBtn.disabled = true;
         connectBtn.disabled = false;
       } finally {
+        waitingForReplug = false;
         connecting = false;
       }
     };
 
-    // --- Flash flow (single image example) -----------------------------------
+    // ---- Flash flow (single image example) ----
     flashBtn.onclick = async () => {
       flashBtn.disabled = true;
       try {
@@ -313,11 +187,12 @@ try { loader.before = 'no_reset'; } catch {}
             log('Stub already running — skipping stub load.');
           }
         } catch (e) {
-          log(`Stub load failed: ${e?.message || e} (continuing)`, true);
+          log(`Stub load failed (continuing): ${e?.message || e}`, true);
         }
 
         await loader.eraseFlash();
 
+        // Uint8Array -> binary string for esptool-js 0.5.7 bundle
         let bstr = '';
         for (let i = 0; i < buf.length; i++) bstr += String.fromCharCode(buf[i]);
 
@@ -332,10 +207,10 @@ try { loader.before = 'no_reset'; } catch {}
           }
         });
 
-        log('Flash complete. Resetting…');
-        await hardResetToApp();
-        log('Done.');
+        log('Flash complete.');
+        // esptool-js usually resets after flashing; we then close everything so next use starts clean
         await disconnectClean();
+        log('To connect again, please UNPLUG and re‑PLUG the device, then click Connect.');
 
       } catch (e) {
         log(`Flash failed: ${e?.message || e}`, true);
@@ -343,27 +218,17 @@ try { loader.before = 'no_reset'; } catch {}
       }
     };
 
-    resetBtn.onclick = async () => { await hardResetToApp(); };
+    // Optional: keep a Reset button for UX clarity
+    resetBtn.onclick = async () => {
+      log('Reset is handled automatically after flashing. Disconnecting instead…');
+      await disconnectClean();
+    };
 
+    // Release the port on tab close/reload
     window.addEventListener('unload', () => {
       try { transport?.disconnect?.(); } catch {}
       try { port?.close?.(); } catch {}
     });
-
-    
-// DEBUG: try only the SparkFun reset without connecting
-document.addEventListener('keydown', async (e) => {
-  if (e.key === 'F8') { // press F8 for a manual SparkFun boot entry
-    if (!port) {
-      try {
-        port = await navigator.serial.requestPort({ filters: CH340_FILTERS });
-        log('Port selected (debug reset).');
-      } catch { return; }
-    }
-    await enterBootloaderSparkfun_viaTransport();
-    log('SparkFun boot-reset sequence sent.');
-  }
-});
 
     log('Installer script loaded.');
     connectBtn.disabled = !(Transport && ESPLoader);
