@@ -20,7 +20,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader</h1>
+  <h1>BTAudio Firmware Uploader v5</h1>
   <p class="muted">Version 0.0.1 • SparkFun ESP32 Thing Plus WROOM</p>
 
   <div class="panel">
@@ -41,7 +41,8 @@
 
   <!-- Single module: import the bundle and wire the UI in one place -->
 <script type="module">
-  import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+  import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+  //import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
   // If your network blocks unpkg, download the bundle and host it locally, then use:
   // import * as esptool from '/BTAudio/assets/esptooljs/bundle.js';
 
@@ -127,61 +128,39 @@ async function dumpPorts(label) {
       // User picks a port (user gesture required)
       port = await navigator.serial.requestPort({});
       log(`Letting ESPLoader/Transport open the port at ${BAUD} baud (skipping explicit port.open)`);
-      //if (!port.readable && !port.writable) await port.open({ baudRate: BAUD })
-      //log(`Port opened @ ${BAUD} baud.`);
-
-      
-// --- DIAG: inspect the native SerialPort
-//console.log('[DIAG] port typeof getInfo:', typeof port?.getInfo);
-//try {
-//  if (typeof port?.getInfo === 'function') {
-//    const gi = port.getInfo(); // spec returns { usbVendorId, usbProductId } when available
-//    console.log('[DIAG] port.getInfo():', gi);
-//  } else {
-//    console.log('[DIAG] port.getInfo(): <missing>');
-//  }
-//} catch (e) {
-//  console.log('[DIAG] port.getInfo() threw:', e);
-//}
-
-// Extra shape info (optional)
-//console.log('[DIAG] port proto:', Object.getPrototypeOf(port)?.constructor?.name);
-//console.log('[DIAG] port own keys:', Object.getOwnPropertyNames(port));
-
-      
+    
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
       log(`after await getports v4`);
            
       
       transport = new Transport(port);
-log(`after new transport`);
-transport.port = port; // <— add this single line
-log(`after new transport`);
+      transport.port = port; // <— add this single line
+      log(`after new transport`);
 
-// Ensure transport.getInfo() exists (some bundles call it in ESPLoader ctor)
-if (typeof transport.getInfo !== 'function') {
-  transport.getInfo = () => {
-    try {
-      return (typeof port?.getInfo === 'function')
-        ? port.getInfo()
-        : { usbVendorId: undefined, usbProductId: undefined };
-    } catch {
-      return { usbVendorId: undefined, usbProductId: undefined };
-    }
-  };
-}
-log(`after getinfo check`);
-log(`[DIAG] transport.getInfo is ${typeof transport.getInfo}`);
-log(`[DIAG] espTerminal is ${typeof espTerminal}`);
+      // Ensure transport.getInfo() exists (some bundles call it in ESPLoader ctor)
+      if (typeof transport.getInfo !== 'function') {
+        transport.getInfo = () => {
+          try {
+            return (typeof port?.getInfo === 'function')
+              ? port.getInfo()
+              : { usbVendorId: undefined, usbProductId: undefined };
+          } catch {
+            return { usbVendorId: undefined, usbProductId: undefined };
+          }
+        };
+      }
+      log(`after getinfo check`);
+      //log(`[DIAG] transport.getInfo is ${typeof transport.getInfo}`);
+      //log(`[DIAG] espTerminal is ${typeof espTerminal}`);
       
       loader    = new ESPLoader(transport, BAUD, espTerminal);
-log(`after loader initialized`);
+      log(`after loader initialized`);
 
       await loader.connect();
-log(`after loader connect`);
+      log(`after loader connect`);
 
       const chip = await loader.chip;
-      log(`Connected to chip: ${chip}`);
+      log(`Connected to BTAudio board`);
 
       flashBtn.disabled = false;
       resetBtn.disabled = false;
@@ -222,8 +201,7 @@ log(`after loader connect`);
       log("Erasing…");
       await loader.eraseFlash();
 
-      // Write merged image at 0x000000
-
+       Write merged image at 0x000000
       log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
       await loader.writeFlash({
         fileArray: [{ address: 0x000000, data: buf }],
@@ -236,6 +214,15 @@ log(`after loader connect`);
           }
         }
       });
+
+      //log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
+      
+      // convert Uint8Array -> binary string using the loader's own helper
+      //const bstr = loader.ui8ToBstr(buf);
+      
+      // use the legacy two-argument signature: (offset, binaryString)
+      // (compatible with older 0.5.x bundles that still expect a string)
+      //await loader.writeFlash(0x000000, bstr);
 
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
