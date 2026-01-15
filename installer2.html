@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v12</h1>
+  <h1>BTAudio Firmware Uploader v13</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -122,7 +122,7 @@ async function dumpPorts(label) {
 }
 
   connectBtn.onclick = async () => {
-    log("Connect clicked.");
+    //log("Connect clicked.");
     connectBtn.disabled = true;
     try{
       if(!('serial' in navigator)){
@@ -210,16 +210,11 @@ async function dumpPorts(label) {
     await loader.eraseFlash();
 
      //Write merged image at 0x000000
-
     // Convert Uint8Array -> binary string using loader helper
-    const bstr = loader.ui8ToBstr(buf);    
-    // Legacy write signature (string image). Keep merged image at 0x000000.
-    // Keep flash sizing explicit for your 16MB WROOM-32E module.
-    await loader.writeFlash(
-      0x000000,
-      bstr,
-      { flashSize: '16MB', flashMode: 'keep', flashFreq: 'keep' }
-    );
+    const bstr = loader.ui8ToBstr(buf);
+    
+    // Legacy positional signature: (offset, binaryString, flashSize, flashMode, flashFreq, compress)
+    await loader.writeFlash(0x000000, bstr, '16MB', 'keep', 'keep', false);
     
       //await loader.writeFlash({
       //  fileArray: [{ address: 0x000000, data: buf }],
@@ -243,7 +238,7 @@ async function dumpPorts(label) {
   };
 
   resetBtn.onclick = async () => {
-    log("Reset clicked.");
+    //log("Reset clicked.");
     await hardResetToApp();
   };
 </script>
