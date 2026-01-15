@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v25</h1>
+  <h1>BTAudio Firmware Uploader v26</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -128,6 +128,7 @@
         try { await loader?.flashFinish?.(false); } catch {}
       } finally {
         try { await port?.close(); } catch {}
+        try { await port?.forget?.(); } catch {}
         try { await closeAllGrantedPorts(); } catch {}
         await sleep(150);
         loader = null; transport = null; port = null;
@@ -194,10 +195,17 @@
         await sleep(100);
 
         // Build transport/loader. Do NOT open here — esptool-js will open during connect().
-        transport = new Transport(port);
+        transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
         loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
 
         try {
+
+// Ensure the port is really closed before esptool-js opens it
+if (port.readable || port.writable) {
+  try { await transport?.disconnect?.(); } catch {}
+  try { await port.close(); } catch {}
+  await sleep(150);
+}
           await loader.connect(); // esptool-js calls port.open() internally
         } catch (firstErr) {
           // Recovery: try bootloader entry once and reconnect
@@ -210,9 +218,16 @@
           try { await port?.close(); } catch {}
           await sleep(150);
 
-          transport = new Transport(port);
+          transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
           loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
 
+
+// Ensure the port is really closed before esptool-js opens it
+if (port.readable || port.writable) {
+  try { await transport?.disconnect?.(); } catch {}
+  try { await port.close(); } catch {}
+  await sleep(150);
+}
           await loader.connect();
         }
 
