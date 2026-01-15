@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v18</h1>
+  <h1>BTAudio Firmware Uploader v19</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -86,7 +86,7 @@ async function disconnectClean() {
     if (loader?.flashFinish) { try { await loader.flashFinish(false); } catch {} }
   } finally {
     try { await port?.close(); } catch {}
-    await closeAllGrantedPorts();                 // ← ensure all granted are closed
+    //await closeAllGrantedPorts();                 // ← ensure all granted are closed
     await new Promise(r => setTimeout(r, 150));   // ← tiny settle for CH340/driver
     loader = null; transport = null; port = null;
     connectBtn.disabled = false;
@@ -113,8 +113,8 @@ disconnectBtn.onclick = disconnectClean;
   }
 
   // Module imported → enable Connect
-  log("Installer script loaded (bundle-as-module).");
-  log(`Module exports: Transport=${!!Transport}, ESPLoader=${!!ESPLoader}`);
+  log("Installer script loaded.");
+  //log(`Module exports: Transport=${!!Transport}, ESPLoader=${!!ESPLoader}`);
   connectBtn.disabled = !(Transport && ESPLoader);
 
   
@@ -157,8 +157,9 @@ async function dumpPorts(label) {
       port = await navigator.serial.requestPort({});
       log(`Letting ESPLoader/Transport open the port at ${BAUD} baud (skipping explicit port.open)`);
     
-      await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
-      log(`after await getports`);           
+      //await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
+      // tiny settle helps CH340/driver after selection
+      await new Promise(r => setTimeout(r, 150));
       
       transport = new Transport(port);
       transport.port = port; // <— add this single line
