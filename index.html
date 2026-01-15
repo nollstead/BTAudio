@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v26</h1>
+  <h1>BTAudio Firmware Uploader v27</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -313,6 +313,11 @@ if (port.readable || port.writable) {
     resetBtn.onclick = async () => {
       await hardResetToApp();
     };
+
+// Release the port on tab close/reload so a fresh load doesn't inherit a locked handle
+window.addEventListener('unload', () => {
+  // Fire and forget; the browser may ignore async but it still helps
+  try { transport?.disconnect?.(); } catch
 
     // Initial enablement
     log("Installer script loaded.");
