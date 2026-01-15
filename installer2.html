@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nollstead Studio BTAudio – Custom Flasher (Bundle-as-Module)</title>
+  <title>Nollstead Studio BTAudio – Firmware Uploader</title>
 
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
@@ -20,7 +20,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Custom Web Flasher</h1>
+  <h1>BTAudio Firmware Uploader</h1>
   <p class="muted">Version 0.0.1 • SparkFun ESP32 Thing Plus WROOM</p>
 
   <div class="panel">
@@ -150,7 +150,7 @@ async function dumpPorts(label) {
 
       
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
-      log(`after await getports v3`);
+      log(`after await getports v4`);
            
       
       transport = new Transport(port);
@@ -223,8 +223,19 @@ log(`after loader connect`);
       await loader.eraseFlash();
 
       // Write merged image at 0x000000
+
       log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
-      await loader.writeFlash(0x000000, buf);
+      await loader.writeFlash({
+        fileArray: [{ address: 0x000000, data: buf }],
+        compress: true,
+        reportProgress: (fileIndex, written, total) => {
+          // optional: progress in your textarea
+          if (total > 0) {
+            const pct = Math.round((written / total) * 100);
+            log(`Writing… ${pct}%`);
+          }
+        }
+      });
 
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
