@@ -196,7 +196,7 @@ if (typeof transport.getInfo !== 'function') {
   };
 }
 log(`after getinfo check`);
-
+log(`[DIAG] transport.getInfo is ${typeof transport.getInfo}`);
       
       loader    = new ESPLoader(transport, BAUD, espTerminal);
 log(`after loader initialized`);
