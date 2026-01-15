@@ -122,21 +122,12 @@
       console.log('[DIAG] portShim:', portShim, 'typeof getInfo:', typeof portShim?.getInfo, 'proto:', Object.getPrototypeOf(portShim)?.constructor?.name);
 
       
-      // Ensure esptool-js sees our just-opened port if it queries navigator.serial.getPorts()
+ 
+      // Ensure libraries that call navigator.serial.getPorts() always see the currently opened port
       {
-        const origGetPorts = navigator.serial.getPorts.bind(navigator.serial);
-        navigator.serial.getPorts = async () => {
-          try {
-            const list = await origGetPorts();
-            // If our current port (or the shim) isn’t in the list, append it so getInfo() isn't read from undefined.
-            const hasCurrent = list.includes(port) || list.includes(portShim);
-            return hasCurrent ? list : [...list, portShim];
-          } catch {
-            // If the original getPorts() throws for any reason, fall back to our current open port
-            return [portShim];
-          }
-        };
+        navigator.serial.getPorts = async () => [port];
       }
+
 
       
       transport = new Transport(port);
