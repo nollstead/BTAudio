@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v22</h1>
+  <h1>BTAudio Firmware Uploader v23</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -213,18 +213,11 @@ async function dumpPorts(label) {
       if (port && (port.readable || port.writable)) { try { await port.close(); } catch {} }
 
       
+      
       // User picks a port (user gesture required)
       port = await navigator.serial.requestPort({});
-      
-      // Put device in ROM bootloader (open -> toggle DTR/RTS -> close)
-      await enterBootloaderOnce();
-      log('Entered bootloader mode.');
-    
-      // Double-check the port is closed before the loader opens it again
-      if (port.readable || port.writable) {
-        try { await port.close(); } catch {}
-        await sleep(150);
-      }
+      log('Port selected.');
+
 
       //await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
       // tiny settle helps CH340/driver after selection
