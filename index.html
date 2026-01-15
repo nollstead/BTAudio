@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v40</h1>
+  <h1>BTAudio Firmware Uploader v41</h1>
   <p class="muted">SparkFun CH340C reset handling</p>
 
   <div class="panel">
@@ -184,15 +184,25 @@
         // Build transport/loader
         transport = new Transport(port, false, false);
 
-        // ---- IMPORTANT: prevent esptool-js from doing its default "before" reset ----
-        // A) Provide a no-op classic reset via resetConstructors (defensive fallback)
+
         const loaderOptions = {
           transport,
           baudrate: BAUD,
           terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } },
+        
+          // Provide no-op reset strategies (they must implement .reset())
           resetConstructors: {
             classicReset: (t, delayMs) => ({
-              async run() { await sleep(delayMs ?? 100); } // no-op; don't toggle DTR/RTS
+              async reset() { await sleep(delayMs ?? 100); }  // NO-OP
+            }),
+            hardReset: (t /*, usingUsbOtg */) => ({
+              async reset() { /* NO-OP */ }
+            }),
+            usbJTAGSerialReset: (t) => ({
+              async reset() { /* NO-OP */ }
+            }),
+            customReset: (t, sequenceString) => ({
+              async reset() { /* NO-OP (we already did SparkFun sequence ourselves) */ }
             })
           }
         };
