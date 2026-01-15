@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v11</h1>
+  <h1>BTAudio Firmware Uploader v12</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -51,11 +51,7 @@
 
   <!-- Single module: import the bundle and wire the UI in one place -->
 <script type="module">
-  //import * as esptool from 'esptool-js';
   import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
-  //import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
-  // If your network blocks unpkg, download the bundle and host it locally, then use:
-  // import * as esptool from '/BTAudio/assets/esptooljs/bundle.js';
 
   const { ESPLoader, Transport } = esptool;
 
@@ -186,56 +182,58 @@ async function dumpPorts(label) {
   };
 
   flashBtn.onclick = async () => {
-    log("Flash clicked.");
-    flashBtn.disabled = true;
-    try{
-      const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
-      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const buf = new Uint8Array(await resp.arrayBuffer());
-      log(`Image size: ${buf.length} bytes`);
+  //log("Flash clicked.");
+  flashBtn.disabled = true;
+  try{
+    const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    log(`Image size: ${buf.length} bytes`);
 
-      // Full erase (comment out for faster incremental updates)
+    // Full erase (comment out for faster incremental updates)
 
-      // Run the esptool-js stub (faster & more reliable erase/write)
-      try {
-        //log("Running stub…");
-        if (typeof loader.runStub === 'function') {
-          await loader.runStub();
-        } else if (typeof loader.loadStub === 'function') {
-          // some versions expose it under loadStub
-          await loader.loadStub();
-        }
-        //log("Stub ready.");
-      } catch (e) {
-        log("Stub failed (continuing with ROM bootloader): " + (e?.message || e), true);
+    // Run the esptool-js stub (faster & more reliable erase/write)
+    try {
+      //log("Running stub…");
+      if (typeof loader.runStub === 'function') {
+        await loader.runStub();
+      } else if (typeof loader.loadStub === 'function') {
+        // some versions expose it under loadStub
+        await loader.loadStub();
       }
+      //log("Stub ready.");
+    } catch (e) {
+      log("Stub failed (continuing with ROM bootloader): " + (e?.message || e), true);
+    }
       
-      //log("Erasing…");
-      await loader.eraseFlash();
+    //log("Erasing…");
+    await loader.eraseFlash();
 
-       //Write merged image at 0x000000
-      await loader.writeFlash({
-        fileArray: [{ address: 0x000000, data: buf }],
-        flashSize: '16MB',
-        flashMode: 'keep',
-        flashFreq: 'keep',
-        compress: false,  
-        reportProgress: (fileIndex, written, total) => {
-          if (total > 0) {
-            const pct = Math.round((written / total) * 100);
-            log(`Writing… ${pct}%`);
-          }
-        }
-      });
+     //Write merged image at 0x000000
 
-      //log("Writing flash @ 0x000000 … (~30–90s for ~1MB images in browser)");
-      
-      // convert Uint8Array -> binary string using the loader's own helper
-      //const bstr = loader.ui8ToBstr(buf);
-      
-      // use the legacy two-argument signature: (offset, binaryString)
-      // (compatible with older 0.5.x bundles that still expect a string)
-      //await loader.writeFlash(0x000000, bstr);
+    // Convert Uint8Array -> binary string using loader helper
+    const bstr = loader.ui8ToBstr(buf);    
+    // Legacy write signature (string image). Keep merged image at 0x000000.
+    // Keep flash sizing explicit for your 16MB WROOM-32E module.
+    await loader.writeFlash(
+      0x000000,
+      bstr,
+      { flashSize: '16MB', flashMode: 'keep', flashFreq: 'keep' }
+    );
+    
+      //await loader.writeFlash({
+      //  fileArray: [{ address: 0x000000, data: buf }],
+      //  flashSize: '16MB',
+      //  flashMode: 'keep',
+      //  flashFreq: 'keep',
+      //  compress: false,  
+      //  reportProgress: (fileIndex, written, total) => {
+      //    if (total > 0) {
+      //      const pct = Math.round((written / total) * 100);
+      //      log(`Writing… ${pct}%`);
+      //    }
+      //  }
+      //});
 
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
