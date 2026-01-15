@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v41</h1>
+  <h1>BTAudio Firmware Uploader v42</h1>
   <p class="muted">SparkFun CH340C reset handling</p>
 
   <div class="panel">
@@ -31,7 +31,7 @@
     </div>
     <div class="instructions">
       <ol>
-        <li>Click <b>Connect</b> and select the <b>USB‑SERIAL CH340</b> port.</li>
+        <li>Click <b>Connect</b> and select the <b>USB‑SERIAL</b> port.</li>
         <li>Click <b>Upload</b> to flash. The board should reboot automatically afterward.</li>
         <li>If connect fails, try a different USB cable or a USB‑2.0 port and retry.</li>
       </ol>
@@ -78,24 +78,37 @@
       } catch {}
     }
 
-    // --- SparkFun CH340C reset sequences (from their schematic note) ---------
-    // Bootloader: RTS HIGH, DTR LOW->HIGH
-    async function enterBootloaderSparkfun() {
-      if (!port) return;
-      await port.open({ baudRate: BAUD }).catch(()=>{});
-      try {
-        await port.setSignals({ requestToSend: false });     // RTS HIGH
-        await sleep(20);
-        await port.setSignals({ dataTerminalReady: true  }); // DTR LOW
-        await sleep(120);
-        await port.setSignals({ dataTerminalReady: false }); // DTR HIGH (edge)
-        await sleep(80);
-        await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-      } finally {
-        try { await port.close(); } catch {}
-      }
-      await sleep(200);
-    }
+
+// SparkFun boot entry using esptool-js Transport + CustomReset
+// Sequence per SparkFun note: RTS HIGH (R0), DTR LOW->HIGH (D1 -> W -> D0)
+async function enterBootloaderSparkfun_viaTransport() {
+  if (!port) return;
+
+  // Build a temporary Transport and OPEN it to be able to toggle lines
+  const tmpTransport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
+
+  try {
+    await tmpTransport.connect(BAUD);
+
+    // Use esptool-js custom reset string (active-low semantics):
+    // R0 (RTS=HIGH), D1 (DTR=LOW), W120, D0 (DTR=HIGH), W80
+    const seq = 'R0|D1|W120|D0|W80';
+
+    // CustomReset class exposes .reset()
+    const custom = new esptool.CustomReset(tmpTransport, seq);
+    await custom.reset();
+
+    // leave both deasserted (safety)
+    await tmpTransport.setRTS(false); // RTS HIGH (deassert)
+    await tmpTransport.setDTR(false); // DTR HIGH (deassert)
+
+  } finally {
+    // CLOSE the temporary Transport so we start fresh for loader.connect()
+    try { await tmpTransport.disconnect(); } catch {}
+    await sleep(200);
+  }
+}
+
 
     // Normal run: DTR LOW, RTS HIGH->LOW pulse
     async function hardResetToApp() {
@@ -174,42 +187,37 @@
             throw e;
           }
         }
-        log('Port selected.');
 
-        // Ensure closed, then SparkFun bootloader entry
+        log('Port selected.');
+        
+        // Ensure closed (safety), then SparkFun bootloader entry via Transport
         try { await port.close(); } catch {}
         await sleep(100);
-        await enterBootloaderSparkfun();
+        await enterBootloaderSparkfun_viaTransport();   // <-- new helper above
+        await sleep(120);
 
         // Build transport/loader
         transport = new Transport(port, false, false);
 
 
-        const loaderOptions = {
-          transport,
-          baudrate: BAUD,
-          terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } },
-        
-          // Provide no-op reset strategies (they must implement .reset())
-          resetConstructors: {
-            classicReset: (t, delayMs) => ({
-              async reset() { await sleep(delayMs ?? 100); }  // NO-OP
-            }),
-            hardReset: (t /*, usingUsbOtg */) => ({
-              async reset() { /* NO-OP */ }
-            }),
-            usbJTAGSerialReset: (t) => ({
-              async reset() { /* NO-OP */ }
-            }),
-            customReset: (t, sequenceString) => ({
-              async reset() { /* NO-OP (we already did SparkFun sequence ourselves) */ }
-            })
-          }
-        };
-        loader = new ESPLoader(loaderOptions);
+       
+const loaderOptions = {
+  transport,
+  baudrate: BAUD,
+  terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } },
 
-        // B) If this build exposes reset mode flags, set 'before' to no_reset (doc: Before types)
-        try { loader.before = 'no_reset'; } catch {}
+  // No-op reset strategies: esptool-js will call .reset(), so provide it
+  resetConstructors: {
+    classicReset: (t, delayMs) => ({ async reset(){ await sleep(delayMs ?? 100); } }),
+    hardReset:   (t /*, usingUsbOtg */) => ({ async reset(){ /* no-op */ } }),
+    usbJTAGSerialReset: (t) => ({ async reset(){ /* no-op */ } }),
+    customReset: (t, seq) => ({ async reset(){ /* no-op */ } }),
+  }
+};
+
+loader = new ESPLoader(loaderOptions);
+try { loader.before = 'no_reset'; } catch {}
+
 
         // Make sure nothing is open before connect
         if (port.readable || port.writable) {
@@ -297,6 +305,21 @@
       try { transport?.disconnect?.(); } catch {}
       try { port?.close?.(); } catch {}
     });
+
+    
+// DEBUG: try only the SparkFun reset without connecting
+document.addEventListener('keydown', async (e) => {
+  if (e.key === 'F8') { // press F8 for a manual SparkFun boot entry
+    if (!port) {
+      try {
+        port = await navigator.serial.requestPort({ filters: CH340_FILTERS });
+        log('Port selected (debug reset).');
+      } catch { return; }
+    }
+    await enterBootloaderSparkfun_viaTransport();
+    log('SparkFun boot-reset sequence sent.');
+  }
+});
 
     log('Installer script loaded.');
     connectBtn.disabled = !(Transport && ESPLoader);
