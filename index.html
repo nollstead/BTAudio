@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v30</h1>
+  <h1>BTAudio Firmware Uploader v31</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -61,7 +61,8 @@
     let loader = null;
     let transport = null;
     let connecting = false;                 // guards against double-click races
-    const BAUD = 460800;                    // can try 921600 if stable
+    //const BAUD = 460800;                    // can try 921600 if stable
+    const BAUD = 230400;                    
 
     const log = (m, e=false) => {
       const ts = new Date().toLocaleTimeString();
