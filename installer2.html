@@ -126,7 +126,7 @@ async function dumpPorts(label) {
 
       // User picks a port (user gesture required)
       port = await navigator.serial.requestPort({});
-      await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
+      if (!port.readable && !port.writable) await port.open({ baudRate: BAUD })
       log(`Port opened @ ${BAUD} baud.`);
 
       
