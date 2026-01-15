@@ -150,7 +150,7 @@ async function dumpPorts(label) {
 
       
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
-      log(`after await getports v2`);
+      log(`after await getports v3`);
            
       
       transport = new Transport(port);
@@ -204,6 +204,21 @@ log(`after loader connect`);
       log(`Image size: ${buf.length} bytes`);
 
       // Full erase (comment out for faster incremental updates)
+
+      // Run the esptool-js stub (faster & more reliable erase/write)
+      try {
+        log("Running stub…");
+        if (typeof loader.runStub === 'function') {
+          await loader.runStub();
+        } else if (typeof loader.loadStub === 'function') {
+          // some versions expose it under loadStub
+          await loader.loadStub();
+        }
+        log("Stub ready.");
+      } catch (e) {
+        log("Stub failed (continuing with ROM bootloader): " + (e?.message || e), true);
+      }
+      
       log("Erasing…");
       await loader.eraseFlash();
 
