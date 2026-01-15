@@ -139,7 +139,7 @@
       }
 
       
-      transport = new Transport(portShim);
+      transport = new Transport(port);
       loader    = new ESPLoader(transport, BAUD, espTerminal);
 
       await loader.connect();
