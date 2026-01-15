@@ -30,12 +30,13 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v16</h1>
+  <h1>BTAudio Firmware Uploader v17</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>1) Connect</button>
+      <button id="disconnectBtn" disabled>4) Disconnect</button>
       <button id="flashBtn"   disabled>2) Upload</button>
       <button id="resetBtn"   disabled>3) Reset</button>
     </div>
@@ -51,6 +52,7 @@
 
   <!-- Single module: import the bundle and wire the UI in one place -->
 <script type="module">
+  const disconnectBtn = document.getElementById('disconnectBtn');
   import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
 
   const { ESPLoader, Transport } = esptool;
@@ -78,6 +80,25 @@
     writeLine(s){ log(s); },
     write(s){ log(s); }
   };
+
+  
+async function disconnectClean() {
+  try {
+    // Finish flash session; reboot=false so we keep control of reset behavior
+    if (loader?.flashFinish) { try { await loader.flashFinish(false); } catch {} }
+  } finally {
+    try { await port?.close(); } catch {}
+    loader = null; transport = null; port = null;
+    connectBtn.disabled = false;
+    flashBtn.disabled = true;
+    resetBtn.disabled = true;
+    disconnectBtn.disabled = true;
+    log("Disconnected and port closed.");
+    connectBtn.focus();  // give the user a next step
+  }
+}
+
+disconnectBtn.onclick = disconnectClean;
 
   // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse)
   async function hardResetToApp(){
@@ -168,10 +189,11 @@ async function dumpPorts(label) {
       //log(`after loader connect`);
 
       const chip = await loader.chip;
-      log(`Connected to BTAudio board`);
+      log(`Connected`);
 
       flashBtn.disabled = false;
       resetBtn.disabled = false;
+      disconnectBtn.disabled = false;
     }catch(e){
       log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
       if (e?.name === 'InvalidStateError' || /already open/i.test(String(e))) {
@@ -193,18 +215,27 @@ async function dumpPorts(label) {
     // Full erase (comment out for faster incremental updates)
 
     // Run the esptool-js stub (faster & more reliable erase/write)
+
+    // Run the esptool-js stub only if not already running
     try {
-      //log("Running stub…");
-      if (typeof loader.runStub === 'function') {
-        await loader.runStub();
-      } else if (typeof loader.loadStub === 'function') {
-        // some versions expose it under loadStub
-        await loader.loadStub();
+      if (!loader.IS_STUB) {
+        log("Running stub…");
+        await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
+        log("Stub ready.");
+      } else {
+        log("Stub already running — skipping stub load.");
       }
-      //log("Stub ready.");
     } catch (e) {
-      log("Stub failed (continuing with ROM bootloader): " + (e?.message || e), true);
+      const msg = String(e?.message || e);
+      if (/software loader is resident|overlapping address range/i.test(msg)) {
+        // Stub is already in RAM; proceed
+        log("Stub already resident — continuing without reloading.");
+      } else {
+        // Fall back to ROM loader if stub genuinely failed
+        log("Stub failed (continuing with ROM bootloader): " + msg, true);
+      }
     }
+
       
       //log("Erasing…");
       await loader.eraseFlash();
@@ -227,12 +258,21 @@ async function dumpPorts(label) {
         }
       });
   
-      log("Flash complete. Wrapping up…");
-      await hardResetToApp();
-      log("Done.");
-    }catch(e){ log(`Flash failed: ${e?.message || e}`, true); }
-    finally{ flashBtn.disabled = false; }
-  };
+
+    log("Flash complete. Wrapping up…");
+    await hardResetToApp();
+    log("Done.");
+
+    // Auto‑disconnect so the next run starts clean
+    await disconnectClean();
+
+    // SUCCESS path ends here — do not re‑enable Upload; the port is closed.
+  } catch (e) {
+    // ERROR path — keep the session so the user can try again
+    log(`Flash failed: ${e?.message || e}`, true);
+    flashBtn.disabled = false;     // allow retry in the current session
+  }
+};
 
   resetBtn.onclick = async () => {
     //log("Reset clicked.");
