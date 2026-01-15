@@ -190,6 +190,21 @@ try {
 
       
       transport = new Transport(port);
+
+// Ensure transport.getInfo() exists (some bundles call it in ESPLoader ctor)
+if (typeof transport.getInfo !== 'function') {
+  transport.getInfo = () => {
+    try {
+      return (typeof port?.getInfo === 'function')
+        ? port.getInfo()
+        : { usbVendorId: undefined, usbProductId: undefined };
+    } catch {
+      return { usbVendorId: undefined, usbProductId: undefined };
+    }
+  };
+}
+
+      
       loader    = new ESPLoader(transport, BAUD, espTerminal);
 
       await loader.connect();
