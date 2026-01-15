@@ -128,6 +128,25 @@ async function dumpPorts(label) {
       port = await navigator.serial.requestPort({});
       await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
       log(`Port opened @ ${BAUD} baud.`);
+
+      
+// --- DIAG: inspect the native SerialPort
+console.log('[DIAG] port typeof getInfo:', typeof port?.getInfo);
+try {
+  if (typeof port?.getInfo === 'function') {
+    const gi = port.getInfo(); // spec returns { usbVendorId, usbProductId } when available
+    console.log('[DIAG] port.getInfo():', gi);
+  } else {
+    console.log('[DIAG] port.getInfo(): <missing>');
+  }
+} catch (e) {
+  console.log('[DIAG] port.getInfo() threw:', e);
+}
+
+// Extra shape info (optional)
+console.log('[DIAG] port proto:', Object.getPrototypeOf(port)?.constructor?.name);
+console.log('[DIAG] port own keys:', Object.getOwnPropertyNames(port));
+
       
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
       log(`after await getports`);
@@ -174,12 +193,15 @@ if (typeof transport.getInfo !== 'function') {
     }
   };
 }
-log(`after getinto check`);
+log(`after getinfo check`);
 
       
       loader    = new ESPLoader(transport, BAUD, espTerminal);
+log(`after loader initialized`);
 
       await loader.connect();
+log(`after loader connect`);
+
       const chip = await loader.chip;
       log(`Connected to chip: ${chip}`);
 
