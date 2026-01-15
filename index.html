@@ -48,7 +48,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v37</h1>
+  <h1>BTAudio Firmware Uploader v38</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -120,6 +120,31 @@
     await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }).catch(()=>{});
     await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }).catch(()=>{});
   }
+
+
+async function enterBootloaderSparkfun() {
+  if (!port) return;
+
+  // Must open the port to drive control lines
+  await port.open({ baudRate: BAUD }).catch(()=>{});
+
+  try {
+    // Ensure RTS HIGH (requestToSend=false) per SparkFun note
+    await port.setSignals({ requestToSend: false });
+    await sleep(20);
+
+    // DTR LOW -> HIGH transition to enter bootloader
+    await port.setSignals({ dataTerminalReady: true  });  // DTR LOW
+    await sleep(120);
+    await port.setSignals({ dataTerminalReady: false });  // DTR HIGH (release)
+    await sleep(80);
+
+    // Leave RTS HIGH; don't hold either line asserted
+  } finally {
+    try { await port.close(); } catch {}
+  }
+  await sleep(200); // CH340C settle time
+}
 
   // Enter the ROM bootloader (DTR->GPIO0, RTS->EN). Used only as a recovery attempt.
 
@@ -198,21 +223,31 @@ async function enterBootloaderOnce() {
 
   // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse)
 
+
 async function hardResetToApp(){
   if (!port) return;
-  try {
-    // Make sure GPIO0 is HIGH (normal boot)
-    await port.setSignals({ requestToSend: false }); // RTS=false -> GPIO0 HIGH (via inversion)
-    await sleep(20);
 
-    // Pulse EN low then high
-    await port.setSignals({ dataTerminalReady: true  }); // DTR=true  -> EN LOW  (reset)
+  await port.open({ baudRate: BAUD }).catch(()=>{});
+  try {
+    // DTR LOW per SparkFun note (hold during the RTS edge)
+    await port.setSignals({ dataTerminalReady: true  });  // DTR LOW
+    await port.setSignals({ requestToSend: false });      // RTS HIGH (ensure starting high)
+    await sleep(40);
+
+    // RTS HIGH -> LOW edge triggers normal boot reset
+    await port.setSignals({ requestToSend: true  });      // RTS LOW (assert)
     await sleep(120);
-    await port.setSignals({ dataTerminalReady: false }); // DTR=false -> EN HIGH (run)
-    log("Issued reset for normal boot (GPIO0 high).");
+
+    // Release signals
+    await port.setSignals({ requestToSend: false });      // RTS back HIGH
+    await port.setSignals({ dataTerminalReady: false });  // DTR back HIGH
+    log("Issued SparkFun reset for normal run mode.");
   } catch(e) {
     log(`Reset sequence failed: ${e?.message || e}`, true);
+  } finally {
+    try { await port.close(); } catch {}
   }
+  await sleep(200);
 }
 
 
@@ -257,28 +292,30 @@ async function hardResetToApp(){
         }
       }
 
-      log('Port selected.');      
-      // Force closed state before we do anything
-      try { await port.close(); } catch {}
-      await sleep(120);
-      
-      // *** NEW: Proactively enter ROM bootloader so esptool-js syncs reliably ***
-      await enterBootloaderOnce();
-      // Small settle to avoid CH341 “present but unresponsive”
-      await sleep(250);
-      
-      // Build transport/loader. Do NOT open here — esptool-js will open during connect().
-      transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
-      loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
-      
-      try {
-        // Ensure the port is really closed before esptool-js opens it
-        if (port.readable || port.writable) {
-          try { await transport?.disconnect?.(); } catch {}
-          try { await port.close(); } catch {}
-          await sleep(150);
-        }
-        await loader.connect(); // esptool-js calls port.open() internally
+
+log('Port selected.');
+
+// Make sure port is closed before the sequence
+try { await port.close(); } catch {}
+await sleep(120);
+
+// ---- SparkFun bootloader entry ----
+await enterBootloaderSparkfun();
+// -----------------------------------
+
+/* now proceed to create Transport/ESPLoader and call loader.connect() */
+transport = new Transport(port, false, false);
+loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
+
+/* (your existing guard to ensure port closed) */
+if (port.readable || port.writable) {
+  try { await transport?.disconnect?.(); } catch {}
+  try { await port.close(); } catch {}
+  await sleep(150);
+}
+
+await loader.connect(); // should now sync reliably
+
 
       } catch (firstErr) {
         // Recovery: forced cleanup + 1200-bps nudge + bootloader entry (once), then reconnect
