@@ -88,6 +88,31 @@
   log(`Module exports: Transport=${!!Transport}, ESPLoader=${!!ESPLoader}`);
   connectBtn.disabled = !(Transport && ESPLoader);
 
+  
+// --- DEBUG helper: log what navigator.serial.getPorts() returns
+async function dumpPorts(label) {
+  try {
+    const list = await navigator.serial.getPorts();
+    console.log(`[DUMP] ${label}: getPorts length=${list.length}`);
+    list.forEach((p, i) => {
+      const hasGI = (typeof p?.getInfo === 'function');
+      let infoStr = '';
+      try {
+        if (hasGI) {
+          const gi = p.getInfo();
+          infoStr = ` vid=${gi?.usbVendorId ?? 'n/a'} pid=${gi?.usbProductId ?? 'n/a'}`;
+        }
+      } catch (e) {
+        infoStr = ` getInfo threw: ${e?.message || e}`;
+      }
+      const proto = Object.getPrototypeOf(p)?.constructor?.name;
+      console.log(`[DUMP] [${i}] hasGetInfo=${hasGI}${infoStr} proto=${proto}`);
+    });
+  } catch (e) {
+    console.log(`[DUMP] ${label}: getPorts threw:`, e);
+  }
+}
+
   connectBtn.onclick = async () => {
     log("Connect clicked.");
     connectBtn.disabled = true;
@@ -103,6 +128,40 @@
       port = await navigator.serial.requestPort({});
       await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
       log(`Port opened @ ${BAUD} baud.`);
+
+      
+// --- DEBUG: inspect the selected/opened port and the granted list
+console.log('[DUMP] port typeof getInfo:', typeof port?.getInfo);
+try {
+  if (typeof port?.getInfo === 'function') {
+    const gi = port.getInfo();
+    console.log('[DUMP] port.getInfo():', gi);
+  } else {
+    console.log('[DUMP] port.getInfo(): <missing>');
+  }
+} catch (e) {
+  console.log('[DUMP] port.getInfo() threw:', e);
+}
+await dumpPorts('after open');
+
+// --- DEBUG: isolate where failure happens
+try {
+  transport = new Transport(port);               // <— keep using the real port (as you already do)
+  log('DEBUG: Transport created.');
+} catch (e) {
+  log(`DEBUG: Transport ctor failed: ${e?.message || e}`, true);
+  console.error('[STACK] Transport ctor failed:', e);
+  throw e; // rethrow to trigger your existing catch/log
+}
+
+try {
+  loader = new ESPLoader(transport, BAUD, espTerminal);
+  log('DEBUG: ESPLoader created.');
+} catch (e) {
+  log(`DEBUG: ESPLoader ctor failed: ${e?.message || e}`, true);
+  console.error('[STACK] ESPLoader ctor failed:', e);
+  throw e;
+}
 
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
             
