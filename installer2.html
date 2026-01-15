@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v10</h1>
+  <h1>BTAudio Firmware Uploader v11</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -166,10 +166,10 @@ async function dumpPorts(label) {
       //loader    = new ESPLoader(transport, BAUD, espTerminal);
       loader = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
       
-      log(`after loader initialized`);
+      //log(`after loader initialized`);
 
       await loader.connect();
-      log(`after loader connect`);
+      //log(`after loader connect`);
 
       const chip = await loader.chip;
       log(`Connected to BTAudio board`);
@@ -210,16 +210,16 @@ async function dumpPorts(label) {
         log("Stub failed (continuing with ROM bootloader): " + (e?.message || e), true);
       }
       
-      log("Erasing…");
+      //log("Erasing…");
       await loader.eraseFlash();
 
        //Write merged image at 0x000000
       await loader.writeFlash({
-        fileArray: [{ address: 0x000000, data: buf }], // merged image -> start of flash
-        flashSize: '16MB',                              // ← explicit size for the Thing Plus (WROOM-32E)
+        fileArray: [{ address: 0x000000, data: buf }],
+        flashSize: '16MB',
         flashMode: 'keep',
         flashFreq: 'keep',
-        compress: true,
+        compress: false,  
         reportProgress: (fileIndex, written, total) => {
           if (total > 0) {
             const pct = Math.round((written / total) * 100);
