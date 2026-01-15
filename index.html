@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v42</h1>
+  <h1>BTAudio Firmware Uploader v43</h1>
   <p class="muted">SparkFun CH340C reset handling</p>
 
   <div class="panel">
@@ -28,6 +28,7 @@
       <button id="flashBtn"   disabled>Upload</button>
       <button id="resetBtn"   disabled>Reset</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
+      <button id="probeBtn">Probe DTR/RTS</button>
     </div>
     <div class="instructions">
       <ol>
@@ -78,6 +79,49 @@
       } catch {}
     }
 
+
+const probeBtn = document.getElementById('probeBtn');
+
+/**
+ * Raw Web Serial DTR/RTS probe: open -> toggle -> close.
+ * Watch edge://device-log (Serial + USB filters) for "control line changed".
+ */
+probeBtn.onclick = async () => {
+  try {
+    const p = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }] });
+    await p.open({
+      baudRate: 115200,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      flowControl: 'none'
+    });
+    log('PROBE: port opened');
+
+    // DTR: LOW->HIGH (assert->deassert)
+    await p.setSignals({ dataTerminalReady: true });
+    log('PROBE: DTR=TRUE (LOW)');
+    await sleep(150);
+    await p.setSignals({ dataTerminalReady: false });
+    log('PROBE: DTR=FALSE (HIGH)');
+    await sleep(150);
+
+    // RTS: HIGH->LOW->HIGH (deassert->assert->deassert)
+    await p.setSignals({ requestToSend: false });
+    log('PROBE: RTS=FALSE (HIGH)');
+    await sleep(150);
+    await p.setSignals({ requestToSend: true });
+    log('PROBE: RTS=TRUE (LOW)');
+    await sleep(150);
+    await p.setSignals({ requestToSend: false });
+    log('PROBE: RTS=FALSE (HIGH)');
+
+    await p.close();
+    log('PROBE: port closed');
+  } catch (e) {
+    log('PROBE ERROR: ' + (e?.message || e), true);
+  }
+};
 
 // SparkFun boot entry using esptool-js Transport + CustomReset
 // Sequence per SparkFun note: RTS HIGH (R0), DTR LOW->HIGH (D1 -> W -> D0)
