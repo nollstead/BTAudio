@@ -128,24 +128,10 @@ async function dumpPorts(label) {
       port = await navigator.serial.requestPort({});
       await port.open({ baudRate: BAUD });   // open() throws if already open/invalid
       log(`Port opened @ ${BAUD} baud.`);
-
-      
-// --- DEBUG: inspect the selected/opened port and the granted list
-console.log('[DUMP] port typeof getInfo:', typeof port?.getInfo);
-try {
-  if (typeof port?.getInfo === 'function') {
-    const gi = port.getInfo();
-    console.log('[DUMP] port.getInfo():', gi);
-  } else {
-    console.log('[DUMP] port.getInfo(): <missing>');
-  }
-} catch (e) {
-  console.log('[DUMP] port.getInfo() threw:', e);
-}
-await dumpPorts('after open');
       
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
-            
+      log(`after await getports`);
+           
       /// Robust shim: guarantee getInfo() exists AND keep the same prototype/shape as the real port
       const portShim = Object.assign(
         Object.create(Object.getPrototypeOf(port)),
@@ -156,21 +142,25 @@ await dumpPorts('after open');
             : () => ({ usbVendorId: undefined, usbProductId: undefined })
         }
       );
+  log(`after object assign`);
 
       
       console.log('[DIAG] port:', port, 'typeof getInfo:', typeof port?.getInfo, 'proto:', Object.getPrototypeOf(port)?.constructor?.name);
       console.log('[DIAG] portShim:', portShim, 'typeof getInfo:', typeof portShim?.getInfo, 'proto:', Object.getPrototypeOf(portShim)?.constructor?.name);
 
+  log(`after console logs`);
       
  
       // Ensure libraries that call navigator.serial.getPorts() always see the currently opened port
       {
         navigator.serial.getPorts = async () => [port];
       }
+  log(`after getports async call`);
 
 
       
       transport = new Transport(port);
+log(`after new transport`);
 
 // Ensure transport.getInfo() exists (some bundles call it in ESPLoader ctor)
 if (typeof transport.getInfo !== 'function') {
@@ -184,6 +174,7 @@ if (typeof transport.getInfo !== 'function') {
     }
   };
 }
+log(`after getinto check`);
 
       
       loader    = new ESPLoader(transport, BAUD, espTerminal);
