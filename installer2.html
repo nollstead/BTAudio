@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v13</h1>
+  <h1>BTAudio Firmware Uploader v14</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -206,30 +206,27 @@ async function dumpPorts(label) {
       log("Stub failed (continuing with ROM bootloader): " + (e?.message || e), true);
     }
       
-    //log("Erasing…");
-    await loader.eraseFlash();
-
-     //Write merged image at 0x000000
-    // Convert Uint8Array -> binary string using loader helper
-    const bstr = loader.ui8ToBstr(buf);
+      //log("Erasing…");
+      //await loader.eraseFlash();
+  
+       //Write merged image at 0x000000
+      // Convert Uint8Array -> binary string using loader helper
+      const bstr = loader.ui8ToBstr(buf);
+      
+      await loader.writeFlash({
+        fileArray: [{ address: 0x000000, data: buf }], // merged image -> start of flash
+        flashSize: '16MB',        // explicit size for ESP32-WROOM-32E Thing Plus
+        flashMode: 'dio',         // common default for WROOM modules
+        flashFreq: '40m',         // stable default flash clock
+        compress: false,          // keep raw path to avoid string conversions
+        reportProgress: (fileIndex, written, total) => {
+          if (total > 0) {
+            const pct = Math.round((written / total) * 100);
+            log(`Writing… ${pct}%`);
+          }
+        }
+      });
     
-    // Legacy positional signature: (offset, binaryString, flashSize, flashMode, flashFreq, compress)
-    await loader.writeFlash(0x000000, bstr, '16MB', 'keep', 'keep', false);
-    
-      //await loader.writeFlash({
-      //  fileArray: [{ address: 0x000000, data: buf }],
-      //  flashSize: '16MB',
-      //  flashMode: 'keep',
-      //  flashFreq: 'keep',
-      //  compress: false,  
-      //  reportProgress: (fileIndex, written, total) => {
-      //    if (total > 0) {
-      //      const pct = Math.round((written / total) * 100);
-      //      log(`Writing… ${pct}%`);
-      //    }
-      //  }
-      //});
-
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
       log("Done.");
