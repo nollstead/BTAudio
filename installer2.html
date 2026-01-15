@@ -126,65 +126,37 @@ async function dumpPorts(label) {
 
       // User picks a port (user gesture required)
       port = await navigator.serial.requestPort({});
-      if (!port.readable && !port.writable) await port.open({ baudRate: BAUD })
-      log(`Port opened @ ${BAUD} baud.`);
+      log(`Letting ESPLoader/Transport open the port at ${BAUD} baud (skipping explicit port.open)`);
+      //if (!port.readable && !port.writable) await port.open({ baudRate: BAUD })
+      //log(`Port opened @ ${BAUD} baud.`);
 
       
 // --- DIAG: inspect the native SerialPort
-console.log('[DIAG] port typeof getInfo:', typeof port?.getInfo);
-try {
-  if (typeof port?.getInfo === 'function') {
-    const gi = port.getInfo(); // spec returns { usbVendorId, usbProductId } when available
-    console.log('[DIAG] port.getInfo():', gi);
-  } else {
-    console.log('[DIAG] port.getInfo(): <missing>');
-  }
-} catch (e) {
-  console.log('[DIAG] port.getInfo() threw:', e);
-}
+//console.log('[DIAG] port typeof getInfo:', typeof port?.getInfo);
+//try {
+//  if (typeof port?.getInfo === 'function') {
+//    const gi = port.getInfo(); // spec returns { usbVendorId, usbProductId } when available
+//    console.log('[DIAG] port.getInfo():', gi);
+//  } else {
+//    console.log('[DIAG] port.getInfo(): <missing>');
+//  }
+//} catch (e) {
+//  console.log('[DIAG] port.getInfo() threw:', e);
+//}
 
 // Extra shape info (optional)
-console.log('[DIAG] port proto:', Object.getPrototypeOf(port)?.constructor?.name);
-console.log('[DIAG] port own keys:', Object.getOwnPropertyNames(port));
+//console.log('[DIAG] port proto:', Object.getPrototypeOf(port)?.constructor?.name);
+//console.log('[DIAG] port own keys:', Object.getOwnPropertyNames(port));
 
       
       await navigator.serial.getPorts(); // ensure granted ports list is populated for libraries that look it up
-      log(`after await getports`);
+      log(`after await getports v2`);
            
-      /// Robust shim: guarantee getInfo() exists AND keep the same prototype/shape as the real port
-      const portShim = Object.assign(
-        Object.create(Object.getPrototypeOf(port)),
-        port,
-        {
-          getInfo: typeof port.getInfo === 'function'
-            ? port.getInfo.bind(port)
-            : () => ({ usbVendorId: undefined, usbProductId: undefined })
-        }
-      );
-  log(`after object assign`);
-
-      
-      console.log('[DIAG] port:', port, 'typeof getInfo:', typeof port?.getInfo, 'proto:', Object.getPrototypeOf(port)?.constructor?.name);
-      console.log('[DIAG] portShim:', portShim, 'typeof getInfo:', typeof portShim?.getInfo, 'proto:', Object.getPrototypeOf(portShim)?.constructor?.name);
-
-  log(`after console logs`);
-      
- 
-      // Ensure libraries that call navigator.serial.getPorts() always see the currently opened port
-      {
-        navigator.serial.getPorts = async () => [port];
-      }
-  log(`after getports async call`);
-
-
       
       transport = new Transport(port);
 log(`after new transport`);
 transport.port = port; // <— add this single line
 log(`after new transport`);
-
-      
-if (typeof transport.getInfo !== 'function') transport.getInfo = () => ({ usbVendorId: undefined, usbProductId: undefined });
 
 // Ensure transport.getInfo() exists (some bundles call it in ESPLoader ctor)
 if (typeof transport.getInfo !== 'function') {
