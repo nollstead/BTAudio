@@ -25,7 +25,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v32</h1>
+  <h1>BTAudio Firmware Uploader v33</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -62,7 +62,7 @@
     let loader = null;
     let transport = null;
     let connecting = false;                 // guards against double-click races
-    let lastDisconnectAt = 0;               // timestamp used to debounce reconnects
+    let lastDisconnectAt = Date.now() - 3600_000;               // 1 hour ago;guarantees no initial wait
     const RECONNECT_DELAY_MS = 3500;        // start with 3.5s; we’ll tune down once stable
     //const BAUD = 460800;                    // can try 921600 if stable
     const BAUD = 230400;                    
