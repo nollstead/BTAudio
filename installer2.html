@@ -30,7 +30,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v17</h1>
+  <h1>BTAudio Firmware Uploader v18</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
@@ -81,20 +81,20 @@
     write(s){ log(s); }
   };
 
-  
 async function disconnectClean() {
   try {
-    // Finish flash session; reboot=false so we keep control of reset behavior
     if (loader?.flashFinish) { try { await loader.flashFinish(false); } catch {} }
   } finally {
     try { await port?.close(); } catch {}
+    await closeAllGrantedPorts();                 // ← ensure all granted are closed
+    await new Promise(r => setTimeout(r, 150));   // ← tiny settle for CH340/driver
     loader = null; transport = null; port = null;
     connectBtn.disabled = false;
     flashBtn.disabled = true;
     resetBtn.disabled = true;
     disconnectBtn.disabled = true;
     log("Disconnected and port closed.");
-    connectBtn.focus();  // give the user a next step
+    connectBtn.focus();
   }
 }
 
