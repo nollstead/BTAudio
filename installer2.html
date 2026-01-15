@@ -181,6 +181,8 @@ console.log('[DIAG] port own keys:', Object.getOwnPropertyNames(port));
       transport = new Transport(port);
 log(`after new transport`);
 
+if (typeof transport.getInfo !== 'function') transport.getInfo = () => ({ usbVendorId: undefined, usbProductId: undefined });
+
 // Ensure transport.getInfo() exists (some bundles call it in ESPLoader ctor)
 if (typeof transport.getInfo !== 'function') {
   transport.getInfo = () => {
