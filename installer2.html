@@ -30,13 +30,13 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v15</h1>
+  <h1>BTAudio Firmware Uploader v16</h1>
   <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>1) Connect</button>
-      <button id="flashBtn"   disabled>2) Flash</button>
+      <button id="flashBtn"   disabled>2) Upload</button>
       <button id="resetBtn"   disabled>3) Reset</button>
     </div>
     <p class="muted">
@@ -210,12 +210,22 @@ async function dumpPorts(label) {
       await loader.eraseFlash();
   
        //Write merged image at 0x000000  
-      // 1) Convert the Uint8Array into a binary string (documented helper)
-      const bstr = loader.ui8ToBstr(buf);
+
+      // Convert Uint8Array -> binary string (published bundles expect string in the browser)
+      let bstr = '';
+      for (let i = 0; i < buf.length; i++) bstr += String.fromCharCode(buf[i]);
       
-      // 2) Legacy, published write signature for bundle 0.5.x:
-      //    (offset, binaryString) → uses values in the image header by default (“keep”)
-      await loader.writeFlash(0x000000, bstr);
+      // Merged image -> must start at 0x000000; your WROOM-32E board has 16MB flash.
+      await loader.writeFlash({
+        fileArray: [{ address: 0x000000, data: bstr }],
+        flashSize: '16MB',     // SparkFun Thing Plus WROOM-32E is 16MB
+        flashMode: 'keep',     // let image header values stand unless needed
+        flashFreq: 'keep',     // idem
+        compress: true,        // use compressed path (string-safe in bundle)
+        reportProgress: (fileIndex, written, total) => {
+          if (total > 0) log(`Writing… ${Math.round((written/total)*100)}%`);
+        }
+      });
   
       log("Flash complete. Wrapping up…");
       await hardResetToApp();
