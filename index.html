@@ -131,7 +131,7 @@
         try { await transport?.disconnect?.(); } catch {}
         try { await loader?.flashFinish?.(false); } catch {}
       } finally {
-        Deassert control lines so the board doesn't stay half-reset on close
+        //Deassert control lines so the board doesn't stay half-reset on close
         try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
         try { await port?.close(); } catch {}
         try { await port?.forget?.(); } catch {}
