@@ -6,6 +6,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Nollstead Studio BTAudio – Firmware Uploader</title>
 
+  
+  <script type="importmap">
+  {
+    "imports": {
+      "esptool-js": "https://unpkg.com/esptool-js@0.5.7/lib/index.js",
+      "pako":       "https://unpkg.com/pako@2.1.0/dist/pako.esm.mjs",
+      "tslib":      "https://unpkg.com/tslib@2.4.1/tslib.es6.js",
+      "atob-lite":  "https://unpkg.com/atob-lite@2.0.0/index.js"
+    }
+  }
+  </script>
+
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
     *{box-sizing:border-box}
@@ -20,13 +32,13 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v5</h1>
-  <p class="muted">Version 0.0.1 • SparkFun ESP32 Thing Plus WROOM</p>
+  <h1>BTAudio Firmware Uploader v6</h1>
+  <p class="muted">Version 0.0.1 • Nollstead Studio BTAudio</p>
 
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>1) Connect</button>
-      <button id="flashBtn"   disabled>2) Flash UTAudio.bin</button>
+      <button id="flashBtn"   disabled>2) Flash</button>
       <button id="resetBtn"   disabled>3) Reset</button>
     </div>
     <p class="muted">
@@ -41,7 +53,8 @@
 
   <!-- Single module: import the bundle and wire the UI in one place -->
 <script type="module">
-  import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+  import * as esptool from 'esptool-js';
+  //import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
   //import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
   // If your network blocks unpkg, download the bundle and host it locally, then use:
   // import * as esptool from '/BTAudio/assets/esptooljs/bundle.js';
