@@ -48,7 +48,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v36</h1>
+  <h1>BTAudio Firmware Uploader v37</h1>
   <p class="muted">Version 0.0.2</p>
 
   <div class="panel">
@@ -122,23 +122,40 @@
   }
 
   // Enter the ROM bootloader (DTR->GPIO0, RTS->EN). Used only as a recovery attempt.
-  async function enterBootloaderOnce() {
-    if (!port) return;
 
-    // Web Serial requires the port to be OPEN to call setSignals()
-    await port.open({ baudRate: BAUD }).catch(()=>{});
-    try {
-      await setSignalsTwice(true,  true);  // GPIO0=LOW, EN=LOW
-      await sleep(80);
-      await setSignalsTwice(true,  false); // EN=HIGH, keep GPIO0 LOW
-      await sleep(80);
-      await setSignalsTwice(false, false); // release GPIO0, EN stays HIGH
-      await sleep(50);
-    } finally {
-      try { await port.close(); } catch {}
-    }
-    await sleep(150); // settle time for CH340
+async function enterBootloaderOnce() {
+  if (!port) return;
+
+  // Web Serial requires the port to be OPEN to call setSignals()
+  await port.open({ baudRate: BAUD }).catch(()=>{});
+
+  try {
+    // Correct mapping for typical ESP32 auto-program circuit:
+    //   DTR -> EN (RESET), inverted
+    //   RTS -> GPIO0 (BOOT), inverted
+
+    // Step 1: Hold GPIO0 LOW (boot mode) and RESET LOW
+    await setSignalsTwice(true,  true);   // DTR=true  -> EN LOW   (reset asserted)
+                                          // RTS=true  -> GPIO0 LOW (boot mode)
+    await sleep(100);
+
+    // Step 2: Release RESET while keeping GPIO0 LOW (device boots into bootloader)
+    await setSignalsTwice(false, true);   // DTR=false -> EN HIGH  (reset released)
+                                          // RTS=true  -> GPIO0 LOW (still boot mode)
+    await sleep(120);
+
+    // Step 3: Finally release GPIO0
+    await setSignalsTwice(false, false);  // DTR=false -> EN HIGH
+                                          // RTS=false -> GPIO0 HIGH
+    await sleep(60);
+  } finally {
+    try { await port.close(); } catch {}
   }
+
+  // Small settle for CH340/CH341
+  await sleep(200);
+}
+
 
   // Close any previously granted ports (same origin) that might still be open.
   async function closeAllGrantedPorts() {
@@ -180,18 +197,24 @@
   disconnectBtn.onclick = disconnectClean;
 
   // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse)
-  async function hardResetToApp(){
-    if (!port) return;
-    try {
-      await port.setSignals({ dataTerminalReady: false }); // DTR=false -> GPIO0 HIGH
-      await port.setSignals({ requestToSend: true  });     // RTS=true  -> EN low
-      await sleep(120);
-      await port.setSignals({ requestToSend: false });     // EN high
-      log("Issued RTS/DTR reset (normal boot).");
-    } catch(e) {
-      log(`Reset sequence failed: ${e?.message || e}`, true);
-    }
+
+async function hardResetToApp(){
+  if (!port) return;
+  try {
+    // Make sure GPIO0 is HIGH (normal boot)
+    await port.setSignals({ requestToSend: false }); // RTS=false -> GPIO0 HIGH (via inversion)
+    await sleep(20);
+
+    // Pulse EN low then high
+    await port.setSignals({ dataTerminalReady: true  }); // DTR=true  -> EN LOW  (reset)
+    await sleep(120);
+    await port.setSignals({ dataTerminalReady: false }); // DTR=false -> EN HIGH (run)
+    log("Issued reset for normal boot (GPIO0 high).");
+  } catch(e) {
+    log(`Reset sequence failed: ${e?.message || e}`, true);
   }
+}
+
 
   // Auto-clean if the cable is pulled
   navigator.serial?.addEventListener?.('disconnect', async (e) => {
