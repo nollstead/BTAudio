@@ -1,26 +1,16 @@
-title = "Nollstead Studio BTAudio"
-schema = 1
+esp_toml_version = 1.0
 
-# --- Version 0.0.1 ---
-[[apps]]
-name = "BTAudio 0.0.1"
+# Base URL where the images live (used to resolve relative paths below)
+firmware_images_url = "https://nollstead.github.io/BTAudio/webflash/"
+supported_apps = ["BTAudio_0_0_1", "BTAudio_0_0_0"]
+
+[BTAudio_0_0_1]
 chipsets = ["ESP32"]
-version = "0.0.1"
-date = "2026-01-16"
-label = "latest update"
+image.esp32 = "BTAudio.bin"
+description = "BTAudio v0.0.1 — latest update"
 
-  [[apps.binaries]]
-  address = "0x000000"
-  path = "https://nollstead.github.io/BTAudio/webflash/BTAudio.bin"
-
-# --- Version 0.0.0 ---
-[[apps]]
-name = "BTAudio 0.0.0"
+[BTAudio_0_0_0]
 chipsets = ["ESP32"]
-version = "0.0.0"
-date = "2026-01-15"
-label = "Base Version"
+image.esp32 = "BTAudio.bin"
+description = "BTAudio v0.0.0 — base version"
 
-  [[apps.binaries]]
-  address = "0x000000"
-  path = "https://nollstead.github.io/BTAudio/webflash/BTAudio.bin"
