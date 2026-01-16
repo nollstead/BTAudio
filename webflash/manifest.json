@@ -1,12 +1,26 @@
 {
   "name": "Nollstead Studio BTAudio",
-  "version": "0.0.1",
+  "schema": 1,
   "builds": [
     {
+      "version": "0.0.1",
+      "date": "2026-01-15",
+      "label": "Initial public test",        // optional: shown in your UI only
       "chipFamily": "ESP32",
       "parts": [
-        { "path": "BTAudio.bin", "offset": 0 }
+        { "path": "webflash/BTAudio.bin", "offset": 0 }
       ]
     }
+    /* Add future items here:
+    ,{
+      "version": "0.0.2",
+      "date": "2026-01-20",
+      "label": "Noise floor fix",
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "webflash/BTAudio-0.0.2.bin", "offset": 0 }
+      ]
+    }
+    */
   ]
 }
