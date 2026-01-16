@@ -19,7 +19,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Uploader v46</h1>
-  <p class="muted">Connect → Upload. If the SparkFun test board stays in bootloader after connect, power‑cycle to run the app.</p>
+  <p class="muted">Connect → Upload. If the SparkFun test board stays in bootloader after connect, power‑cycle to run your app.</p>
 
   <div class="panel">
     <div class="row">
@@ -34,9 +34,11 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Use your vendored esptool-js bundle (Launchpad pins 0.5.4) -->
+  <!-- Use your vendored esptool-js bundle (Launchpad pins 0.5.4).
+       If you prefer absolute URL, you can switch to:
+       https://nollstead.github.io/BTAudio/webflash/esptoolsjs/bundle.js -->
   <script type="module">
-    import * as esptool from 'https://nollstead.github.io/BTAudio/webflash/esptoolsjs/bundle.js';
+    import * as esptool from './webflash/esptoolsjs/bundle.js';
     const { ESPLoader, Transport } = esptool;
 
     // ---- DOM / log ----------------------------------------------------------
@@ -54,9 +56,19 @@
 
     // ---- State & constants --------------------------------------------------
     let port=null, transport=null, loader=null, connecting=false;
-    const BAUD = 115200;  // conservative first sync
+    const BAUD = 115200;  // conservative first sync (used widely by Espressif demos)
     const FILTERS = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }]; // SparkFun CH340C
     const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+    // Close any previously granted ports (stale handles cause intermittent connect failures)
+    async function closeGrantedPorts() {
+      try {
+        const ports = await navigator.serial.getPorts();
+        for (const p of ports) {
+          try { await p.close(); } catch {}
+        }
+      } catch {}
+    }
 
     async function disconnectClean() {
       try {
@@ -86,6 +98,9 @@
           throw new Error('Web Serial not available. Use Chrome/Edge over HTTPS.');
         }
 
+        await closeGrantedPorts();        // harden against stale opens
+        await sleep(100);
+
         port = await navigator.serial.requestPort({ filters: FILTERS });
         log('Port selected.');
 
@@ -103,7 +118,21 @@
           await sleep(120);
         }
 
-        await loader.connect(); // triggers DevKitC-style DTR/RTS inside esptool-js
+        // Try connect; if first attempt fails, close and retry once (matches esptool/esptool-js style)
+        let connected = false, lastErr = null;
+        for (let attempt = 1; attempt <= 2 && !connected; attempt++) {
+          try {
+            await loader.connect(); // triggers DevKitC-style DTR/RTS auto-reset internally
+            connected = true;
+          } catch (e) {
+            lastErr = e;
+            log(`Connect attempt ${attempt} failed, retrying…`, true);
+            try { await transport?.disconnect?.(); } catch {}
+            try { await port?.close?.(); } catch {}
+            await sleep(200);
+          }
+        }
+        if (!connected) throw lastErr || new Error('Sync timeout.');
 
         const chip = await loader.chip;
         log(`Connected (${chip})`);
@@ -145,8 +174,8 @@
 
         await loader.eraseFlash();
 
-        // IMPORTANT for esptool-js 0.5.4 (Launchpad pin): pass a BINARY STRING
-        // Build in chunks to keep the UI responsive for large images.
+        // IMPORTANT for esptool-js 0.5.4: pass a BINARY STRING to writeFlash (older browser bundle behavior).
+        // (Uint8Array->string; chunked to keep UI responsive for large images.)
         let bstr = '';
         const CHUNK = 1 << 15; // 32 KB
         for (let i = 0; i < u8.length; i += CHUNK) {
@@ -180,7 +209,7 @@
       try { port?.close?.(); } catch {}
     });
 
-    log('Launchpad-style backend (0.5.4) loaded.');
+    log('Launchpad-style backend (0.5.4-compatible) loaded.');
     connectBtn.disabled = !(Transport && ESPLoader);
   </script>
 </body>
