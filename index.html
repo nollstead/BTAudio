@@ -1,128 +1,193 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BT Audio – Firmware Update</title>
-
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Nollstead Studio BTAudio – Firmware Uploader</title>
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 700px;
-      margin: 50px auto;
-      padding: 20px;
-      text-align: center;
-      background: #121212;
-      color: #eaeaea;
-      line-height: 1.6;
-    }
-
-    h1 {
-      margin-bottom: 10px;
-      color: #fff;
-    }
-
-    .version {
-      color: #bbb;
-      margin-top: -10px;
-      margin-bottom: 30px;
-    }
-
-    .flash-box {
-      background: #1e1e1e;
-      border-radius: 14px;
-      padding: 30px;
-      margin: 30px 0;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
-    }
-
-    a.flash-btn {
-      display: inline-block;
-      padding: 15px 40px;
-      background: #4CAF50;
-      color: white;
-      text-decoration: none;
-      border-radius: 10px;
-      font-size: 20px;
-      font-weight: 600;
-      transition: background 0.15s ease-in-out;
-    }
-    a.flash-btn:hover {
-      background: #43a047;
-    }
-
-    .instructions {
-      background: #1e1e1e;
-      border-radius: 14px;
-      padding: 25px;
-      margin-top: 35px;
-      text-align: left;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
-    }
-
-    .instructions h3 {
-      margin-top: 0;
-      font-size: 1.3rem;
-      color: #fff;
-    }
-
-    .instructions ol {
-      padding-left: 22px;
-      color: #ddd;
-    }
-
-    .instructions li {
-      margin: 10px 0;
-      font-size: 1rem;
-    }
-
-    .note {
-      margin-top: 20px;
-      color: #999;
-      font-size: 0.9rem;
-    }
-
-    .footer {
-      margin-top: 40px;
-      color: #666;
-      font-size: 0.9rem;
-    }
+    :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text);line-height:1.6}
+    h1{margin:0 0 8px}.muted{color:var(--muted)}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+    .instructions{background:#1e1e1e;border-radius:14px;padding:18px;margin-top:10px}
+    button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
+    button[disabled]{opacity:.55;cursor:not-allowed}
+    button:hover:not([disabled]){background:var(--accent2)}
+    textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
   </style>
 </head>
-
 <body>
-  <h1>BT Audio Firmware Update</h1>
-  <p class="version">Firmware: <strong>UTAudio.bin</strong></p>
+  <h1>BTAudio Firmware Uploader (v1)</h1>
+  <p class="muted">Version 1.0.0</p>
 
-  <div class="flash-box">
-    <p>Click the button below to launch the official Espressif web flasher:</p>
-
-    <a class="flash-btn"
-       href="https://espressif.github.io/esp-launchpad/?flashConfigURL=https://nollstead.github.io/BTAudio/launchpad.toml">
-       Open ESP Launchpad
-    </a>
-  </div>
-
+  <div class="panel">
+    <div class="row">
+      <button id="connectBtn" disabled>Connect</button>
+      <button id="flashBtn"   disabled>Upload</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
   <div class="instructions">
     <h3>Instructions</h3>
     <ol>
-      <li>Connect your BT Audio device to your computer via USB.</li>
-      <li>Click <strong>Open ESP Launchpad</strong> above.</li>
-      <li>Select the serial port (e.g., “USB‑SERIAL CH340”).</li>
-      <li>Choose the firmware version shown in Launchpad.</li>
-      <li>Click <strong>Flash</strong> and wait for completion.</li>
-      <li>Your device will restart automatically.</li>
+      <li>Connect your BTAudio device to your computer via USB.</li>
+      <li>Click <strong>Connect</strong> above and when prompted select the serial port (e.g., “USB‑SERIAL”).</li>
+      <li>Click <strong>Upload</strong> and wait for completion.</li>
+      <li>Your device should restart automatically once the upload is complete</li>
     </ol>
-
-    <p class="note">
-      Note: If your device doesn’t auto‑enter flash mode, press and hold the BOOT button while connecting, 
-      or when prompted during flashing.
-    </p>
+  </div>
   </div>
 
-  <p class="footer">
-    Hosted on GitHub Pages • 
-    <a href="https://github.com/nollstead/BTAudio" style="color: #888">View Repository</a>
-  </p>
+  <div class="panel">
+    <h3>Log</h3>
+    <textarea id="log" readonly></textarea>
+  </div>
+
+  <!-- Hosted esptool-js (Espressif), v0.5.7: supports Uint8Array in writeFlash -->
+  <script type="module">
+    import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+    const { ESPLoader, Transport } = esptool;
+
+    // Minimal terminal that looks like Launchpad’s console
+    const logEl = document.getElementById('log');
+    const term = { clean(){}, writeLine(s){w(s)}, write(s){w(s)} };
+    function w(s){ logEl.value += (s.endsWith('\n')? s : s+'\n'); logEl.scrollTop = logEl.scrollHeight; }
+
+    // DOM
+    const connectBtn = document.getElementById('connectBtn');
+    const flashBtn   = document.getElementById('flashBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+
+    // State & constants
+    let port=null, transport=null, loader=null, connected=false, stubReady=false;
+    const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
+    const FAST_BAUD = 921600;
+    // CP210x (LyraT); you can loosen filter by passing [] if needed
+    const FILTERS   = [{ usbVendorId: 0x10c4 }]; 
+    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+    async function disconnectClean(){
+      try { try{ await transport?.disconnect?.(); }catch{}; try{ await loader?.flashFinish?.(false); }catch{}; }
+      finally {
+        try { await port?.close?.(); } catch {}
+        port=transport=loader=null; connected=false; stubReady=false;
+        connectBtn.disabled=false; flashBtn.disabled=true; disconnectBtn.disabled=true;
+        w('Disconnected and port closed.');
+      }
+    }
+    disconnectBtn.onclick = disconnectClean;
+
+    // CONNECT — let esptool-js manage the full sync loop (no app-level retries)
+    connectBtn.onclick = async () => {
+      connectBtn.disabled = true;
+      try {
+        if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
+
+        port = await navigator.serial.requestPort({ filters: FILTERS });
+        w('esptool.js');
+        const info = port.getInfo?.()||{};
+        w(`Serial port WebSerial VendorID 0x${(info.usbVendorId||0).toString(16)} ProductID 0x${(info.usbProductId||0).toString(16)}`);
+        w('Connecting...');
+
+        transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+        loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+
+        // NOTE: esptool-js connect() performs the standard DevKitC auto-reset via DTR/RTS
+        await loader.connect();     // may take a while; let it run
+        connected = true;
+
+        // Upload stub (like Launchpad) → run at higher baud
+        w('Uploading stub...');
+        try {
+          await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
+          w('Running stub...');
+          w('Stub running...');
+          stubReady = true;
+        } catch (e) {
+          w(`Stub load failed: ${e?.message || e}`); // continue anyway
+        }
+
+        // Change baud to 921600 (faster flashing)
+        try {
+          w(`Changing baudrate to ${FAST_BAUD}`);
+          await loader.changeBaud(FAST_BAUD);
+          w('Changed');
+        } catch (e) {
+          w(`Baud change failed (continuing at ${OPEN_BAUD})`);
+        }
+
+        // Flash ID & size (informational, matches Launchpad console)
+        try {
+          const id = await loader.flashId();
+          if (id) {
+            const man = (id >> 16) & 0xff, dev = id & 0xffff;
+            w(`Manufacturer: ${man.toString(16)}`);
+            w(`Device: ${dev.toString(16)}`);
+          }
+        } catch {}
+        try {
+          if (typeof loader.detectFlashSize === 'function') {
+            const sizeStr = await loader.detectFlashSize();
+            w(`Detected flash size: ${sizeStr}`);
+          }
+        } catch {}
+
+        flashBtn.disabled = !connected; disconnectBtn.disabled = !connected;
+
+      } catch (e) {
+        w(`Connect failed: ${e?.message || e}`);
+        try { await transport?.disconnect?.(); } catch {}
+        try { await port?.close?.(); } catch {}
+        connectBtn.disabled = false;
+      }
+    };
+
+    // FLASH — single merged image @ 0x000000 (Uint8Array supported in esptool-js 0.5.7)
+    flashBtn.onclick = async () => {
+      flashBtn.disabled = true;
+      try {
+        const resp = await fetch('webflash/BTAudio.bin', { cache:'no-cache' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const image = new Uint8Array(await resp.arrayBuffer());
+        w(`Image size: ${image.length} bytes`);
+
+        // Ensure stub (usually already running)
+        if (!stubReady) {
+          w('Uploading stub...');
+          try {
+            await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
+            w('Running stub...'); w('Stub running...'); stubReady = true;
+          } catch (e) { w(`Stub load failed: ${e?.message||e}`); }
+        }
+
+        await loader.eraseFlash();
+
+        await loader.writeFlash({
+          fileArray: [{ address: 0x000000, data: image }], // Uint8Array OK in 0.5.7
+          flashSize: '16MB',
+          flashMode: 'keep',
+          flashFreq: 'keep',
+          compress: true,
+          reportProgress: (idx, written, total) => {
+            if (total>0) w(`Writing… ${Math.round((written/total)*100)}%`);
+          }
+        });
+
+        w('Flash complete.');
+        w('Power-cycle to run the new firmware if the device remains in bootloader.');
+        await disconnectClean();
+
+      } catch (e) {
+        w(`Flash failed: ${e?.message || e}`);
+        flashBtn.disabled=false;
+      }
+    };
+
+    window.addEventListener('unload',()=>{ try{ transport?.disconnect?.(); }catch{}; try{ port?.close?.(); }catch{}; });
+
+    // Enable connect once ESPLoader is present
+    connectBtn.disabled = !(Transport && ESPLoader);
+  </script>
 </body>
 </html>
