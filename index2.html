@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -19,8 +18,8 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v48</h1>
-  <p class="muted">Connect → Upload. If the SparkFun test board stays in bootloader after connect, power‑cycle to run your app.</p>
+  <h1>BTAudio Firmware Uploader v49</h1>
+  <p class="muted">Connect → (stub + baud) → Upload. If the SparkFun test board stays in bootloader after connect, power‑cycle to run the app.</p>
 
   <div class="panel">
     <div class="row">
@@ -35,7 +34,7 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Use your vendored esptool-js bundle; Launchpad pins esptool-js 0.5.4 -->
+  <!-- Use your vendored esptool-js bundle (Launchpad pins esptool-js 0.5.4) -->
   <script type="module">
     import * as esptool from './webflash/esptoolsjs/bundle.js';
     const { ESPLoader, Transport } = esptool;
@@ -46,25 +45,26 @@
     const flashBtn = document.getElementById('flashBtn');
     const disconnectBtn = document.getElementById('disconnectBtn');
 
-    const log = (m, e=false) => {
-      const ts = new Date().toLocaleTimeString();
-      logEl.value += `[${ts}] ${m}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
-      (e ? console.error : console.log)(m);
+    // Mimic Launchpad’s minimal terminal: fewer app-level messages, let ESPLoader speak
+    const term = {
+      clean(){}, // keep log history
+      writeLine(s){ logRaw(s); },
+      write(s){ logRaw(s); }
     };
 
-    // ---- State & constants --------------------------------------------------
-    let port=null, transport=null, loader=null, connecting=false;
-    const BAUD = 115200;                                           // Launchpad uses conservative opens
-    const FILTERS = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }]; // SparkFun CH340C
-    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
-
-    async function closeGrantedPorts() {
-      try {
-        const ports = await navigator.serial.getPorts();
-        for (const p of ports) { try { await p.close(); } catch {} }
-      } catch {}
+    function logRaw(m){ // raw passthrough (no timestamps, like Launchpad’s console)
+      logEl.value += (m.endsWith('\n') ? m : (m + '\n'));
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(m);
     }
+    function log(m){ logRaw(m); }
+
+    // ---- State & constants --------------------------------------------------
+    let port=null, transport=null, loader=null;
+    const OPEN_BAUD = 115200;                 // Launchpad starts low, then bumps after stub
+    const FAST_BAUD = 921600;                 // Matches the screenshot (“Changing baudrate to 921600”)
+    const FILTERS   = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }]; // SparkFun CH340C
+    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
     async function disconnectClean() {
       try {
@@ -72,7 +72,6 @@
         try { await loader?.flashFinish?.(false); } catch {}
       } finally {
         try { await port?.close?.(); } catch {}
-        await sleep(120);
         loader = transport = port = null;
 
         connectBtn.disabled = false;
@@ -83,69 +82,83 @@
     }
     disconnectBtn.onclick = disconnectClean;
 
-    // ---- Connect (Launchpad-style): let esptool-js do its default reset ----
+    // ---- Connect: EXACT Launchpad flow (connect → stub → changeBaud → flash info) ----
     connectBtn.onclick = async () => {
-      if (connecting) return;
-      connecting = true;
       connectBtn.disabled = true;
-
       try {
-        if (!('serial' in navigator)) {
-          throw new Error('Web Serial not available. Use Chrome/Edge over HTTPS.');
-        }
-
-        await closeGrantedPorts();       // remove stale handles
-        await sleep(100);
+        if (!('serial' in navigator)) throw new Error('Web Serial not available. Use Chrome/Edge over HTTPS.');
 
         port = await navigator.serial.requestPort({ filters: FILTERS });
-        log('Port selected.');
+        log('esptool.js');
+        log(`Serial port WebSerial VendorID 0x${(port.getInfo().usbVendorId||0).toString(16)} ProductID 0x${(port.getInfo().usbProductId||0).toString(16)}`);
+        log('Connecting...');
 
         transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
         loader = new ESPLoader({
           transport,
-          baudrate: BAUD,
-          terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } }
+          baudrate: OPEN_BAUD,
+          terminal: term
         });
 
-        // Safety close before connect
-        if (port.readable || port.writable) {
-          try { await transport.disconnect(); } catch {}
-          try { await port.close(); } catch {}
-          await sleep(120);
+        // IMPORTANT: Let esptool-js manage its own connect loop (no external short retries)
+        await loader.connect();  // default DevKitC auto-reset (DTR→GPIO0, RTS→EN) occurs inside connect()
+        // At this point Launchpad prints info like "Detecting chip type..."; that comes from ESPLoader via terminal
+
+        // Upload stub immediately (Launchpad-style)
+        log('Uploading stub...');
+        try {
+          await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
+          log('Running stub...');
+          log('Stub running...');
+        } catch (e) {
+          log(`Stub load failed: ${e?.message || e}`); // still continue
         }
 
-        // Try connect; if it fails once, close and retry (mirrors real tools' robustness)
-        let connected = false, lastErr = null;
-        for (let i=1;i<=2 && !connected;i++) {
-          try {
-            await loader.connect();   // default DevKitC auto-reset occurs here (DTR/RTS active-low)
-            connected = true;
-          } catch (e) {
-            lastErr = e;
-            log(`Connect attempt ${i} failed, retrying…`, true);
-            try { await transport?.disconnect?.(); } catch {}
-            try { await port?.close?.(); } catch {}
-            await sleep(250);
+        // Change baud to FAST_BAUD (Launchpad shows "Changing baudrate to 921600")
+        try {
+          log(`Changing baudrate to ${FAST_BAUD}`);
+          await loader.changeBaud(FAST_BAUD);                 // ESPLoader API supports this
+          log('Changed');
+        } catch (e) {
+          log(`Baud change failed (continuing at ${OPEN_BAUD}): ${e?.message || e}`);
+        }
+
+        // Read flash ID / size like Launchpad does
+        try {
+          const id = await loader.flashId();
+          if (id) {
+            const man = (id >> 16) & 0xff;
+            const dev = id & 0xffff;
+            log(`Manufacturer: ${man.toString(16)}`);
+            log(`Device: ${dev.toString(16)}`);
           }
-        }
-        if (!connected) throw lastErr || new Error('Sync timeout');
+        } catch {}
 
-        const chip = await loader.chip;
-        log(`Connected (${chip})`);
+        // Detected flash size (best effort)
+        try {
+          // If your bundle exposes detectFlashSize() use it; otherwise fall back to configured size
+          if (typeof loader.detectFlashSize === 'function') {
+            const sizeStr = await loader.detectFlashSize();
+            log(`Detected flash size: ${sizeStr}`);
+          }
+        } catch {}
+
+        flashBtn.disabled = true; // keep disabled until we refetch baud info from loader
+        // Small delay before enabling flash (let the stub settle)
+        await sleep(150);
         flashBtn.disabled = false;
+        disconnectBtn.disabled = true; // Launchpad keeps connection while user prepares to flash
         disconnectBtn.disabled = false;
 
       } catch (e) {
-        log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
+        log(`Connect failed: ${e?.message || e}`);
         try { await transport?.disconnect?.(); } catch {}
         try { await port?.close?.(); } catch {}
         connectBtn.disabled = false;
-      } finally {
-        connecting = false;
       }
     };
 
-    // ---- Flash (single merged image at 0x000000) ----------------------------
+    // ---- Flash (single merged image at 0x000000, Launchpad-compatible) ----
     flashBtn.onclick = async () => {
       flashBtn.disabled = true;
       try {
@@ -154,23 +167,10 @@
         const u8 = new Uint8Array(await resp.arrayBuffer());
         log(`Image size: ${u8.length} bytes`);
 
-        // Optional stub (common Launchpad pattern)
-        try {
-          if (!loader.IS_STUB) {
-            log('Running stub…');
-            const runStub = (typeof loader.runStub === 'function') ? loader.runStub() : loader.loadStub();
-            await runStub;
-            log('Stub ready.');
-          } else {
-            log('Stub already running — skipping stub load.');
-          }
-        } catch (e) {
-          log(`Stub load failed (continuing with ROM): ${e?.message || e}`, true);
-        }
-
+        // We’re already running the stub and (attempted) high baud, so flash should be fast like Launchpad
         await loader.eraseFlash();
 
-        // IMPORTANT for esptool-js 0.5.4 browser bundle: pass a BINARY STRING to writeFlash
+        // esptool-js 0.5.4 browser bundle expects a BINARY STRING for writeFlash()
         let bstr = '';
         const CHUNK = 1 << 15; // 32 KB
         for (let i = 0; i < u8.length; i += CHUNK) {
@@ -190,11 +190,11 @@
         });
 
         log('Flash complete.');
+        log('Power-cycle to run the new firmware if the LED remains red.');
         await disconnectClean();
-        log('If the board stayed in bootloader, power-cycle to run your app.');
 
       } catch (e) {
-        log(`Flash failed: ${e?.message || e}`, true);
+        log(`Flash failed: ${e?.message || e}`);
         flashBtn.disabled = false;
       }
     };
@@ -204,7 +204,7 @@
       try { port?.close?.(); } catch {}
     });
 
-    log('Launchpad-style backend (0.5.4-compatible) loaded.');
+    // Enable Connect when ESPLoader & Transport exist
     connectBtn.disabled = !(Transport && ESPLoader);
   </script>
 </body>
