@@ -1,0 +1,217 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>BTAudio Firmware Uploader – SparkFun Test</title>
+  <style>
+    :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text)}
+    h1{margin:0 0 8px}.muted{color:var(--muted)}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+    button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
+    button[disabled]{opacity:.55;cursor:not-allowed}
+    button:hover:not([disabled]){background:var(--accent2)}
+    textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  </style>
+</head>
+<body>
+  <h1>BTAudio Firmware Uploader (SparkFun test)</h1>
+  <p class="muted">Tip: add a <b>0.1 µF</b> capacitor from <b>EN → GND</b> on the breadboard for better boot reliability.</p>
+
+  <div class="panel">
+    <div class="row">
+      <button id="connectNormalBtn" disabled>Connect (Normal)</button>
+      <button id="connectAfterPowerBtn" disabled>Connect after Power‑Cycle</button>
+      <button id="flashBtn" disabled>Upload</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+    <p class="muted">
+      Use <b>Connect after Power‑Cycle</b> if Normal connect fails. It will ask you to <b>unplug</b>, then <b>re‑plug</b> and select the port,
+      and connects immediately after enumeration (this is the most reliable state on CH340C).
+    </p>
+  </div>
+
+  <div class="panel">
+    <h3>Log</h3>
+    <textarea id="log" readonly></textarea>
+  </div>
+
+  <script type="module">
+    import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+    const { ESPLoader, Transport } = esptool;
+
+    const logEl = document.getElementById('log');
+    const connectNormalBtn    = document.getElementById('connectNormalBtn');
+    const connectAfterPowerBtn= document.getElementById('connectAfterPowerBtn');
+    const flashBtn            = document.getElementById('flashBtn');
+    const disconnectBtn       = document.getElementById('disconnectBtn');
+
+    const log = (m, e=false) => {
+      const ts = new Date().toLocaleTimeString();
+      logEl.value += `[${ts}] ${m}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      (e ? console.error : console.log)(m);
+    };
+
+    let port=null, transport=null, loader=null, connecting=false;
+    const BAUD = 115200;
+    const FILTERS = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }]; // SparkFun CH340C
+    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+    async function disconnectClean() {
+      try {
+        try { await transport?.disconnect?.(); } catch {}
+        try { await loader?.flashFinish?.(false); } catch {}
+      } finally {
+        try { await port?.close?.(); } catch {}
+        await sleep(120);
+        loader=null; transport=null; port=null;
+
+        connectNormalBtn.disabled = false;
+        connectAfterPowerBtn.disabled = false;
+        flashBtn.disabled = true;
+        disconnectBtn.disabled = true;
+        log('Disconnected and port closed.');
+      }
+    }
+    disconnectBtn.onclick = disconnectClean;
+
+    async function doConnect(chosenPort) {
+      // Build transport/loader and use default before-reset (DevKitC-style)
+      transport = new Transport(chosenPort, /*tracing*/ false, /*enableSlipReader*/ false);
+      loader = new ESPLoader({
+        transport,
+        baudrate: BAUD,
+        terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } }
+      });
+
+      // Ensure closed before connect
+      if (chosenPort.readable || chosenPort.writable) {
+        try { await transport.disconnect(); } catch {}
+        try { await chosenPort.close(); } catch {}
+        await sleep(120);
+      }
+
+      await loader.connect(); // esptool-js default auto-reset occurs here
+      const chip = await loader.chip;
+      log(`Connected (${chip})`);
+      flashBtn.disabled = false;
+      disconnectBtn.disabled = false;
+    }
+
+    // ---- Connect (Normal) ----
+    connectNormalBtn.onclick = async () => {
+      if (connecting) return;
+      connecting = true;
+      connectNormalBtn.disabled = true;
+      connectAfterPowerBtn.disabled = true;
+      try {
+        // Select current port; if chooser is cancelled, this throws
+        port = await navigator.serial.requestPort({ filters: FILTERS });
+        log('Port selected.');
+        await doConnect(port);
+      } catch (e) {
+        log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
+        connectNormalBtn.disabled = false;
+        connectAfterPowerBtn.disabled = false;
+      } finally {
+        connecting = false;
+      }
+    };
+
+    // ---- Connect after Power-Cycle (re-plug guided) ----
+    connectAfterPowerBtn.onclick = async () => {
+      if (connecting) return;
+      connecting = true;
+      connectNormalBtn.disabled = true;
+      connectAfterPowerBtn.disabled = true;
+
+      let waitingForDisconnect = true;
+      const onDisc = ()=> waitingForDisconnect = false;
+      navigator.serial?.addEventListener?.('disconnect', onDisc);
+
+      try {
+        log('Unplug the device now… (waiting up to 15s)');
+        const start = Date.now();
+        while (waitingForDisconnect && (Date.now()-start)<15000) { await sleep(100); }
+        navigator.serial?.removeEventListener?.('disconnect', onDisc);
+        if (waitingForDisconnect) throw new Error('No disconnect detected. Unplug USB, then try again.');
+
+        log('Great. Plug it back in, then select the port when prompted…');
+        await sleep(600); // grace time for enumeration
+
+        port = await navigator.serial.requestPort({ filters: FILTERS });
+        log('Port selected after re-plug.');
+        await doConnect(port);
+      } catch (e) {
+        log(`Connect (after power-cycle) failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
+        connectNormalBtn.disabled = false;
+        connectAfterPowerBtn.disabled = false;
+      } finally {
+        navigator.serial?.removeEventListener?.('disconnect', onDisc);
+        connecting = false;
+      }
+    };
+
+    // ---- Flash ----
+    flashBtn.onclick = async () => {
+      flashBtn.disabled = true;
+      try {
+        const resp = await fetch('webflash/UTAudio.bin', { cache: 'no-cache' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        log(`Image size: ${buf.length} bytes`);
+
+        try {
+          if (!loader.IS_STUB) {
+            log('Running stub…');
+            await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
+            log('Stub ready.');
+          } else {
+            log('Stub already running — skipping stub load.');
+          }
+        } catch (e) {
+          log(`Stub load failed (continuing): ${e?.message || e}`, true);
+        }
+
+        await loader.eraseFlash();
+
+        // Uint8Array -> binary string (esptool-js 0.5.7 browser bundle)
+        let bstr=''; for(let i=0;i<buf.length;i++) bstr+=String.fromCharCode(buf[i]);
+
+        await loader.writeFlash({
+          fileArray: [{ address: 0x000000, data: bstr }],
+          flashSize: '16MB',
+          flashMode: 'keep',
+          flashFreq: 'keep',
+          compress: true,
+          reportProgress: (idx,written,total)=>{
+            if (total>0) log(`Writing… ${Math.round((written/total)*100)}%`);
+          }
+        });
+
+        log('Flash complete.');
+        // esptool-js will issue an after-reset; then we close for a clean next run
+        await disconnectClean();
+        log('If you want to connect again, use “Connect after Power‑Cycle”.');
+      } catch (e) {
+        log(`Flash failed: ${e?.message || e}`, true);
+        flashBtn.disabled = false;
+      }
+    };
+
+    window.addEventListener('unload', () => {
+      try { transport?.disconnect?.(); } catch {}
+      try { port?.close?.(); } catch {}
+    });
+
+    log('Installer script loaded.');
+    connectNormalBtn.disabled = !(Transport && ESPLoader);
+    connectAfterPowerBtn.disabled = !(Transport && ESPLoader);
+  </script>
+</body>
+</html>
