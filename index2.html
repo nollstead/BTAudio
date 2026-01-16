@@ -2,33 +2,40 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>BTAudio Uploader – SparkFun Custom Reset v2</title>
-  <style>
-    :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
-    *{box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text)}
-    h1{margin:0 0 8px}.muted{color:var(--muted)}
-    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
-    .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
-    button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
-    button[disabled]{opacity:.55;cursor:not-allowed}
-    button:hover:not([disabled]){background:var(--accent2)}
-    textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>BTAudio Uploader – Manual Boot (SparkFun test) v3</title>
+<style>
+  :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text)}
+  h1{margin:0 0 8px}.muted{color:var(--muted)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+  button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
+  button[disabled]{opacity:.55;cursor:not-allowed}
+  button:hover:not([disabled]){background:var(--accent2)}
+  textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
+</style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader (SparkFun)</h1>
-  <p class="muted">Add a <b>0.1 µF</b> capacitor from <b>EN → GND</b> on the breadboard for better boot timing.</p>
+  <h1>BTAudio Firmware Uploader (Manual Boot mode)</h1>
+  <p class="muted">
+    Breadboard tip: add a <b>0.1 µF</b> capacitor from <b>EN → GND</b> to improve reset timing margin.
+  </p>
 
   <div class="panel">
     <div class="row">
-      <button id="connectBtn" disabled>Connect</button>
+      <button id="connectManualBtn" disabled>Connect (Manual Boot)</button>
       <button id="flashBtn" disabled>Upload</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
-    <p class="muted">If connect ever fails, unplug and re‑plug once, then click Connect again.</p>
+    <ol class="muted">
+      <li>Place a jumper so <b>GPIO0 ↔ GND</b> (hold BOOT).</li>
+      <li><b>Unplug</b> USB, then <b>plug back in</b> (power cycle) — the board is now in the ROM bootloader.</li>
+      <li>Remove the GPIO0↔GND jumper (release BOOT).</li>
+      <li>Click <b>Connect (Manual Boot)</b>. No DTR/RTS toggles are used.</li>
+    </ol>
   </div>
 
   <div class="panel">
@@ -40,239 +47,113 @@
     import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
     const { ESPLoader, Transport } = esptool;
 
-    // ---- DOM / log ----------------------------------------------------------
     const logEl = document.getElementById('log');
-    const connectBtn = document.getElementById('connectBtn');
+    const connectManualBtn = document.getElementById('connectManualBtn');
     const flashBtn = document.getElementById('flashBtn');
     const disconnectBtn = document.getElementById('disconnectBtn');
+    const log = (m,e=false)=>{ const ts=new Date().toLocaleTimeString();
+      logEl.value+=`[${ts}] ${m}\n`; logEl.scrollTop=logEl.scrollHeight;
+      (e?console.error:console.log)(m); };
 
-    const log = (m, e=false) => {
-      const ts = new Date().toLocaleTimeString();
-      logEl.value += `[${ts}] ${m}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
-      (e ? console.error : console.log)(m);
-    };
-
-    // ---- State & constants --------------------------------------------------
     let port=null, transport=null, loader=null, connecting=false;
-    const BAUD = 115200;  // conservative first sync
-    const FILTERS = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }]; // CH340C
-    const SERIAL_OPTS = { dataBits:8, stopBits:1, parity:'none', flowControl:'none' };
-    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+    const BAUD=115200;
+    const FILTERS=[{ usbVendorId:0x1a86, usbProductId:0x7523 }]; // SparkFun CH340C
+    const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 
-    async function disconnectClean() {
-      try {
-        try { await transport?.disconnect?.(); } catch {}
-        try { await loader?.flashFinish?.(false); } catch {}
-      } finally {
-        try { await port?.close?.(); } catch {}
-        await sleep(120);
-        loader=null; transport=null; port=null;
-        connectBtn.disabled=false; flashBtn.disabled=true; disconnectBtn.disabled=true;
+    async function disconnectClean(){
+      try { try{ await transport?.disconnect?.(); }catch{}; try{ await loader?.flashFinish?.(false); }catch{}; }
+      finally {
+        try{ await port?.close?.(); }catch{};
+        loader=transport=port=null; await sleep(100);
+        connectManualBtn.disabled=false; flashBtn.disabled=true; disconnectBtn.disabled=true;
         log('Disconnected and port closed.');
       }
     }
-    disconnectBtn.onclick = disconnectClean;
+    disconnectBtn.onclick=disconnectClean;
 
-    // ---- CH340C/SparkFun boot entry sequences via Transport -----------------
-    async function openTransport(p) {
-      const t = new Transport(p, /*tracing*/ false, /*enableSlipReader*/ false);
-      await t.connect(BAUD, SERIAL_OPTS);
-      return t;
-    }
-
-    // SparkFun: RTS HIGH, then DTR LOW -> HIGH
-    async function sparkfunBoot(t) {
-      log('SF: RTS=HIGH (false), DTR=LOW (true) → DTR=HIGH (false)');
-      await t.setRTS(false);     // RTS HIGH (deassert)
-      await sleep(30);
-      await t.setDTR(true);      // DTR LOW (assert) → pulls GPIO0 low through SF network
-      await sleep(150);
-      await t.setDTR(false);     // DTR HIGH (release)
-      await sleep(80);
-      // leave both deasserted
-      await t.setRTS(false);
-      await t.setDTR(false);
-      await sleep(200);
-    }
-
-    // Alternate mapping (seen on some CH34x boards): DTR HIGH, pulse RTS LOW
-    async function altBoot(t) {
-      log('ALT: DTR=HIGH (false), RTS pulse LOW (true) → HIGH (false)');
-      await t.setDTR(false);     // DTR HIGH
-      await sleep(30);
-      await t.setRTS(true);      // RTS LOW (assert)
-      await sleep(150);
-      await t.setRTS(false);     // RTS HIGH (release)
-      await sleep(120);
-      await t.setDTR(false);
-      await sleep(200);
-    }
-
-    // 1200‑baud nudge sometimes clears stale driver state
-    async function nudge1200(p) {
-      try { await p.open({ baudRate:1200 }); await sleep(100); } catch {}
-      try { await p.close(); } catch {}
-      await sleep(150);
-    }
-
-    // Try SF mapping; if that fails, try ALT; optional nudge in between
-    async function runBootSequences(p) {
-      // sequence 1
-      let t = await openTransport(p);
-      try {
-        await t.setRTS(false); await t.setDTR(false); await sleep(40); // idle high
-        await sparkfunBoot(t);
-      } finally { try { await t.disconnect(); } catch {} }
-      await sleep(150);
-
-      // We'll let esptool-js try to sync. If connect() fails, our catch will try ALT
-    }
-
-    // ---- Connect flow -------------------------------------------------------
-    connectBtn.onclick = async () => {
-      if (connecting) return;
-      connecting = true;
-      connectBtn.disabled=true;
-
-      try {
+    // Manual-boot connect: NO DTR/RTS, no before-reset; just sync to ROM loader now running
+    connectManualBtn.onclick = async ()=>{
+      if (connecting) return; connecting=true;
+      connectManualBtn.disabled=true;
+      try{
         port = await navigator.serial.requestPort({ filters: FILTERS });
         log('Port selected.');
 
-        // 1) Try SparkFun boot sequence before letting esptool-js sync
-        await runBootSequences(port);
-
-        // 2) Build transport/loader, and PREVENT default "before reset"
-        transport = new Transport(port, false, false);
-        const loaderOptions = {
+        transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+        loader = new ESPLoader({
           transport,
           baudrate: BAUD,
-          terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } },
-          // No-op ResetConstructors: esptool-js will call .reset(), so provide it
-          resetConstructors: {
-            classicReset: (t, delayMs)=>({ async reset(){ await sleep(delayMs ?? 80); }}),
-            hardReset: (t)=>({ async reset(){} }),
-            usbJTAGSerialReset: (t)=>({ async reset(){} }),
-            customReset: (t, seq)=>({ async reset(){} }),
-          }
-        };
-        loader = new ESPLoader(loaderOptions);
-        try { loader.before = 'no_reset'; } catch {} // ask for no pre-reset if exposed
+          terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } }
+        });
 
-        // Ensure closed before connect
+        // Ask loader to skip its own pre-reset (equivalent to esptool.py --before no_reset)
+        try { loader.before = 'no_reset'; } catch {}
+
+        // Ensure closed before connect; then try multiple sync attempts (user just power-cycled)
         if (port.readable || port.writable) {
           try { await transport.disconnect(); } catch {}
           try { await port.close(); } catch {}
           await sleep(120);
         }
 
-        // 3) Try to sync
-        await loader.connect();
+        let ok=false, lastErr=null;
+        for (let i=0;i<6 && !ok;i++){
+          try { await loader.connect(); ok=true; }
+          catch(e){ lastErr=e; await sleep(300); }
+        }
+        if (!ok) throw lastErr || new Error('Sync timeout.');
+
         const chip = await loader.chip;
-        log(`Connected (${chip})`);
+        log(`Connected (no-reset) → ${chip}`);
         flashBtn.disabled=false; disconnectBtn.disabled=false;
 
-      } catch (firstErr) {
-        log(`First connect failed: ${firstErr?.message || firstErr}`, true);
-
-        // Recovery: ALT boot + 1200-baud nudge + retry
-        try { await transport?.disconnect?.(); } catch {}
-        try { await port?.close?.(); } catch {}
-        await sleep(120);
-
-        try {
-          await nudge1200(port);
-          const t2 = await openTransport(port);
-          try {
-            await t2.setRTS(false); await t2.setDTR(false); await sleep(40);
-            await altBoot(t2);
-          } finally { try { await t2.disconnect(); } catch {} }
-          await sleep(150);
-
-          // rebuild loader
-          transport = new Transport(port, false, false);
-          const loaderOptions2 = {
-            transport,
-            baudrate: BAUD,
-            terminal: { clean(){ logEl.value=''; }, writeLine(s){ log(s); }, write(s){ log(s); } },
-            resetConstructors: {
-              classicReset: (t, delayMs)=>({ async reset(){ await sleep(delayMs ?? 80); }}),
-              hardReset: (t)=>({ async reset(){} }),
-              usbJTAGSerialReset: (t)=>({ async reset(){} }),
-              customReset: (t, seq)=>({ async reset(){} }),
-            }
-          };
-          loader = new ESPLoader(loaderOptions2);
-          try { loader.before = 'no_reset'; } catch {}
-
-          if (port.readable || port.writable) {
-            try { await transport.disconnect(); } catch {}
-            try { await port.close(); } catch {}
-            await sleep(120);
-          }
-
-          await loader.connect();
-          const chip = await loader.chip;
-          log(`Connected after ALT recovery (${chip})`);
-          flashBtn.disabled=false; disconnectBtn.disabled=false;
-
-        } catch (e2) {
-          log(`Connect failed (after ALT): ${e2?.message || e2}`, true);
-          try { await transport?.disconnect?.(); } catch {}
-          try { await port?.close?.(); } catch {}
-          connectBtn.disabled=false;
-        }
-      } finally {
-        connecting=false;
-      }
+      } catch(e){
+        log(`Connect failed (manual boot): ${e?.name?e.name+': ':''}${e?.message||e}`, true);
+        connectManualBtn.disabled=false;
+      } finally { connecting=false; }
     };
 
-    // ---- Flash flow (single .bin at 0x000000) ------------------------------
-    flashBtn.onclick = async () => {
-      flashBtn.disabled = true;
+    // Flash a single binary at 0x000000
+    flashBtn.onclick = async ()=>{
+      flashBtn.disabled=true;
       try {
         const resp = await fetch('webflash/UTAudio.bin', { cache:'no-cache' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const buf = new Uint8Array(await resp.arrayBuffer());
         log(`Image size: ${buf.length} bytes`);
 
-        try {
-          if (!loader.IS_STUB) { log('Running stub…');
-            await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
+        try{
+          if (!loader.IS_STUB){ log('Running stub…');
+            await (typeof loader.runStub==='function'?loader.runStub():loader.loadStub());
             log('Stub ready.');
           } else { log('Stub already running — skipping stub load.'); }
-        } catch (e) {
-          log(`Stub load failed (continuing with ROM): ${e?.message || e}`, true);
-        }
+        } catch(e){ log(`Stub load failed (continuing with ROM): ${e?.message||e}`, true); }
 
         await loader.eraseFlash();
 
         let bstr=''; for (let i=0;i<buf.length;i++) bstr+=String.fromCharCode(buf[i]);
         await loader.writeFlash({
           fileArray: [{ address: 0x000000, data: bstr }],
-          flashSize:'16MB', flashMode:'keep', flashFreq:'keep',
-          compress:true,
-          reportProgress:(i,w,t)=>{ if (t>0) log(`Writing… ${Math.round((w/t)*100)}%`); }
+          flashSize:'16MB', flashMode:'keep', flashFreq:'keep', compress:true,
+          reportProgress:(i,w,t)=>{ if(t>0) log(`Writing… ${Math.round((w/t)*100)}%`); }
         });
 
-        log('Flash complete. Disconnecting…');
+        log('Flash complete. Power-cycle the board to run your app.');
         await disconnectClean();
-        log('If a future connect fails, unplug/re‑plug once and try again.');
 
-      } catch (e) {
-        log(`Flash failed: ${e?.message || e}`, true);
-        flashBtn.disabled = false;
+      } catch(e){
+        log(`Flash failed: ${e?.message||e}`, true);
+        flashBtn.disabled=false;
       }
     };
 
-    // Release on tab close
-    window.addEventListener('unload', () => {
-      try { transport?.disconnect?.(); } catch {}
-      try { port?.close?.(); } catch {}
+    window.addEventListener('unload', ()=>{
+      try{ transport?.disconnect?.(); }catch{}
+      try{ port?.close?.(); }catch{}
     });
 
-    log('Installer script loaded.');
-    connectBtn.disabled = !(Transport && ESPLoader);
+    log('Manual-boot installer loaded.');
+    connectManualBtn.disabled = !(Transport && ESPLoader);
   </script>
 </body>
 </html>
