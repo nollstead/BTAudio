@@ -32,7 +32,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">V2</p>
+  <p class="muted">V=3</p>
 
   <div class="panel">
     <div class="row">
@@ -67,8 +67,8 @@
 
   <!-- Hosted esptool-js (Espressif), v0.5.7: supports Uint8Array in writeFlash -->
   <script type="module">
-    //import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
-    import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js?v=0.5.7    
+    import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+    //import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js?v=0.5.7    
     const { ESPLoader, Transport } = esptool;
 
     // Minimal terminal (Launchpad-like)
@@ -277,6 +277,15 @@
       }
     };
 
+    function u8ToBinaryString(u8) {
+      let b = '';
+      const CHUNK = 1 << 15; // 32 KB
+      for (let i = 0; i < u8.length; i += CHUNK) {
+        b += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+      }
+      return b;
+    }
+
     // --------------------------- FLASH ------------------------------
     // Use the selected build's parts list (single or multi) from manifest
     flashBtn.onclick = async () => {
@@ -299,8 +308,8 @@
           if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
           const u8 = new Uint8Array(await resp.arrayBuffer());
 
-          fileArray.push({ address: addr, data: u8 });
-        }
+          //fileArray.push({ address: addr, data: u8 });
+          fileArray.push({ address: addr, data: u8ToBinaryString(u8) });        }
 
         // Ensure stub (usually already running)
         if (!stubReady) {
