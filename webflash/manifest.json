@@ -4,23 +4,23 @@
   "builds": [
     {
       "version": "0.0.1",
+      "date": "2026-01-16",
+      "label": "latest update",
+      "notes": "Sample notes: improved USB audio latency; added stability fixes for pairing.",
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "webflash/BTAudio.bin", "offset": 0 }
+      ]
+    },
+    {
+      "version": "0.0.0",
       "date": "2026-01-15",
-      "label": "Initial public test",        // optional: shown in your UI only
+      "label": "Base Version",
+      "notes": "Sample notes: initial release used for bring-up and baseline testing.",
       "chipFamily": "ESP32",
       "parts": [
         { "path": "webflash/BTAudio.bin", "offset": 0 }
       ]
     }
-    /* Add future items here:
-    ,{
-      "version": "0.0.2",
-      "date": "2026-01-20",
-      "label": "Noise floor fix",
-      "chipFamily": "ESP32",
-      "parts": [
-        { "path": "webflash/BTAudio-0.0.2.bin", "offset": 0 }
-      ]
-    }
-    */
   ]
 }
