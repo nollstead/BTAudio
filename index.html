@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -32,8 +31,8 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Update Tool</h1>
-  <p class="muted">Version 0.0.1</p>
+  <h1>BTAudio Firmware Update</h1>
+  <p class="muted">V2</p>
 
   <div class="panel">
     <div class="row">
@@ -86,7 +85,11 @@
     let port=null, transport=null, loader=null, connected=false, stubReady=false;
     const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
     const FAST_BAUD = 921600;
-    const FILTERS   = [{ usbVendorId: 0x10c4 }];  // match Silicon Labs CP210x (LyraT)
+    //const FILTERS   = [{ usbVendorId: 0x10c4 }];  // match Silicon Labs CP210x (LyraT)    
+    const FILTERS = [
+      { usbVendorId: 0x10c4 },                      // Silicon Labs (CP210x) - LyraT
+      { usbVendorId: 0x1a86, usbProductId: 0x7523 } // WCH CH340C/C (SparkFun)
+    ];
     const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
     // Manifest / selected build
@@ -156,7 +159,7 @@
     }
 
     async function loadManifest() {
-      const resp = await fetch('webflash/manifest.json', { cache: 'no-cache' });
+      const resp = await fetch('https://nollstead.github.io/BTAudio/webflash/manifest.json', { cache: 'no-cache' });
       if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
       const data = await resp.json();
       if (!Array.isArray(data.builds)) throw new Error('manifest: builds missing');
