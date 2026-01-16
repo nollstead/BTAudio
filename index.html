@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nollstead Studio BTAudio – Firmware Uploader</title>
+  <title>BTAudio Firmware Update</title>
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
     *{box-sizing:border-box}
@@ -19,8 +19,8 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader (v1)</h1>
-  <p class="muted">Version 1.0.0</p>
+  <h1>BTAudio Firmware Update Tool</h1>
+  <p class="muted">Version 0.0.1</p>
 
   <div class="panel">
     <div class="row">
@@ -34,7 +34,7 @@
       <li>Connect your BTAudio device to your computer via USB.</li>
       <li>Click <strong>Connect</strong> above and when prompted select the serial port (e.g., “USB‑SERIAL”).</li>
       <li>Click <strong>Upload</strong> and wait for completion.</li>
-      <li>Your device should restart automatically once the upload is complete</li>
+      <li>Your device will restart automatically once the upload is complete</li>
     </ol>
   </div>
   </div>
@@ -63,8 +63,8 @@
     let port=null, transport=null, loader=null, connected=false, stubReady=false;
     const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
     const FAST_BAUD = 921600;
-    // CP210x (LyraT); you can loosen filter by passing [] if needed
-    const FILTERS   = [{ usbVendorId: 0x10c4 }]; 
+    // const FILTERS   = [{ usbVendorId: 0x10c4, usbProductId: 0xea60 }];    // match specific CP210 chips
+    const FILTERS = [{ usbVendorId: 0x10c4 }];                               // match any CP210x    
     const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
     async function disconnectClean(){
@@ -174,8 +174,13 @@
           }
         });
 
-        w('Flash complete.');
-        w('Power-cycle to run the new firmware if the device remains in bootloader.');
+        w('Finalizing…');
+        // Ask esptool-js to reset/run the app after flashing:
+        try { await loader.flashFinish(true); } catch {}
+        // Optional: short grace so the reset isn’t racing our close()
+        await new Promise(r => setTimeout(r, 150));
+        
+        w('Flash complete. Device rebooted.');
         await disconnectClean();
 
       } catch (e) {
@@ -183,7 +188,8 @@
         flashBtn.disabled=false;
       }
     };
-
+    
+    //prevents leaving the COM port open if the page is closed/reloaded
     window.addEventListener('unload',()=>{ try{ transport?.disconnect?.(); }catch{}; try{ port?.close?.(); }catch{}; });
 
     // Enable connect once ESPLoader is present
