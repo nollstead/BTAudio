@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v45</h1>
+  <h1>BTAudio Firmware Uploader v46</h1>
   <p class="muted">Connect → Upload. If the SparkFun test board stays in bootloader after connect, power‑cycle to run the app.</p>
 
   <div class="panel">
@@ -36,7 +36,7 @@
 
   <!-- Use your vendored esptool-js bundle (Launchpad pins 0.5.4) -->
   <script type="module">
-    import * as esptool from 'https://nollstead.github.io/BTAudio/assets/esptooljs/bundle.js';
+    import * as esptool from 'https://nollstead.github.io/BTAudio/webflash/esptooljs/bundle.js';
     const { ESPLoader, Transport } = esptool;
 
     // ---- DOM / log ----------------------------------------------------------
@@ -124,7 +124,7 @@
     flashBtn.onclick = async () => {
       flashBtn.disabled = true;
       try {
-        const resp = await fetch('webflash/UTAudio.bin', { cache: 'no-cache' });
+        const resp = await fetch('webflash/BTAudio.bin', { cache: 'no-cache' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const u8 = new Uint8Array(await resp.arrayBuffer());
         log(`Image size: ${u8.length} bytes`);
