@@ -12,7 +12,7 @@ description = "BTAudio v0.0.2 — added hello"
 [BTAudio_0_0_1]
 chipsets = ["ESP32"]
 image.esp32 = "BTAudio.bin"
-description = "BTAudio v0.0.1 — latest update"
+description = "BTAudio v0.0.1 — duplicate of base"
 
 [BTAudio_0_0_0]
 chipsets = ["ESP32"]
