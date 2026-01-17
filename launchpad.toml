@@ -6,7 +6,7 @@ supported_apps = ["BTAudio_0_0_1", "BTAudio_0_0_0"]
 
 [BTAudio_0_0_2]
 chipsets = ["ESP32"]
-image.esp32 = "BTAudio.bin"
+image.esp32 = "BTAudio_002.bin"
 description = "BTAudio v0.0.2 — added hello"
 
 [BTAudio_0_0_1]
