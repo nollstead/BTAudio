@@ -32,7 +32,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">V=5</p>
+  <p class="muted">V=6</p>
 
   <div class="panel">
     <div class="row">
@@ -66,347 +66,388 @@
   </div>
 
   <!-- Hosted esptool-js (Espressif), v0.5.7: supports Uint8Array in writeFlash -->
-  <script type="module">
-    import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
-    //import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js?v=0.5.7    
-    const { ESPLoader, Transport } = esptool;
 
-    // Minimal terminal (Launchpad-like)
-    const logEl = document.getElementById('log');
-    const term = { clean(){}, writeLine(s){w(s)}, write(s){w(s)} };
-    function w(s){ logEl.value += (s.endsWith('\n')? s : s+'\n'); logEl.scrollTop = logEl.scrollHeight; }
+<script type="module">
+  /********************************************************************
+   * BTAudio Firmware Update – v6 (LyraT/CP2102N + SparkFun/CH340 test)
+   * Stock esptool-js flow with explicit control-line handling and
+   * DETAILED DIAGNOSTIC LOGGING at each step.
+   ********************************************************************/
 
-    // DOM
-    const connectBtn = document.getElementById('connectBtn');
-    const flashBtn   = document.getElementById('flashBtn');
-    const disconnectBtn = document.getElementById('disconnectBtn');
-    const fwList     = document.getElementById('fwList');
+  import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+  const { ESPLoader, Transport } = esptool;
 
-    // State & constants
-    let port=null, transport=null, loader=null, connected=false, stubReady=false;
-    const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
-    const FAST_BAUD = 921600;
-    //const FILTERS   = [{ usbVendorId: 0x10c4 }];  // match Silicon Labs CP210x (LyraT)    
-    const FILTERS = [
-      { usbVendorId: 0x10c4 },                      // Silicon Labs (CP210x) - LyraT
-      { usbVendorId: 0x1a86, usbProductId: 0x7523 } // WCH CH340C/C (SparkFun)
-    ];
-    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+  // ---------- Logging ----------
+  const logEl = document.getElementById('log');
+  function ts() { return new Date().toLocaleTimeString(); }
+  function w(s){ logEl.value += `[${ts()}] ${s}\n`; logEl.scrollTop = logEl.scrollHeight; }
+  // Pipe esptool-js messages into our log (kept ON for diagnostics)
+  const term = { clean(){}, writeLine(s){ if(s) w(`ESPLoader: ${s}`); }, write(s){ if(s) w(`ESPLoader: ${s}`); } };
 
-    // Manifest / selected build
-    let manifest=null, selectedBuild=null;
+  // ---------- DOM ----------
+  const connectBtn = document.getElementById('connectBtn');
+  const flashBtn   = document.getElementById('flashBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const fwList     = document.getElementById('fwList');
 
-    // ---------- Version picker helpers ----------
-    function parseSemver(v) {
-      const m = String(v||'').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
-      return m ? {maj:+m[1], min:+m[2], pat:+m[3]} : {maj:0, min:0, pat:0};
-    }
-    function compareSemverDesc(a, b) {
-      const aa = parseSemver(a), bb = parseSemver(b);
-      if (aa.maj !== bb.maj) return bb.maj - aa.maj;
-      if (aa.min !== bb.min) return bb.min - aa.min;
-      return bb.pat - aa.pat;
-    }
+  // ---------- State & constants ----------
+  let port=null, transport=null, loader=null, connected=false, stubReady=false;
+  const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
+  const FAST_BAUD = 921600;
+  // Silicon Labs CP210x (LyraT) + WCH CH340C (SparkFun) for interim testing
+  const FILTERS = [
+    { usbVendorId: 0x10c4 },                      // CP210x
+    { usbVendorId: 0x1a86, usbProductId: 0x7523 } // CH340C
+  ];
+  const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+  let __connecting = false; // simple re-entrancy guard
 
-    function renderFwList(builds){
-      fwList.innerHTML = '';
-      builds.forEach((b, idx) => {
-        const id = `fw_${idx}`;
-        const item = document.createElement('div');
-        item.className = 'fw-item';
+  // ---------- Manifest-driven picker ----------
+  let manifest=null, selectedBuild=null;
 
-        const radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'fwPick';
-        radio.id = id;
-        radio.value = b.version || '';
-        radio.checked = (selectedBuild && selectedBuild.version === b.version) || (!selectedBuild && idx===0);
-        radio.addEventListener('change', () => { selectedBuild = b; });
+  function parseSemver(v) {
+    const m = String(v||'').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
+    return m ? {maj:+m[1], min:+m[2], pat:+m[3]} : {maj:0, min:0, pat:0};
+  }
+  function compareSemverDesc(a, b) {
+    const aa = parseSemver(a), bb = parseSemver(b);
+    if (aa.maj !== bb.maj) return bb.maj - aa.maj;
+    if (aa.min !== bb.min) return bb.min - aa.min;
+    return bb.pat - aa.pat;
+  }
 
-        const meta = document.createElement('div');
-        meta.className = 'fw-meta';
+  function renderFwList(builds){
+    fwList.innerHTML = '';
+    builds.forEach((b, idx) => {
+      const id = `fw_${idx}`;
+      const item = document.createElement('div');
+      item.className = 'fw-item';
 
-        const topLine = document.createElement('div');
-        topLine.className = 'fw-line';
-        const vSpan = document.createElement('span'); vSpan.className = 'fw-version'; vSpan.textContent = b.version || 'v?';
-        topLine.appendChild(vSpan);
-        if (b.date){
-          const dSpan = document.createElement('span'); dSpan.className='fw-date'; dSpan.textContent = b.date;
-          topLine.appendChild(dSpan);
-        }
-        if (b.label){
-          const lSpan = document.createElement('span'); lSpan.className='fw-label'; lSpan.textContent = b.label;
-          topLine.appendChild(lSpan);
-        }
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'fwPick';
+      radio.id = id;
+      radio.value = b.version || '';
+      radio.checked = (selectedBuild && selectedBuild.version === b.version) || (!selectedBuild && idx===0);
+      radio.addEventListener('change', () => { selectedBuild = b; w(`UI: Selected build ${b.version} (${b.date||'no date'})`); });
 
-        meta.appendChild(topLine);
+      const meta = document.createElement('div');
+      meta.className = 'fw-meta';
 
-        // Optional notes field (if you decide to add it later)
-        if (b.notes){
-          const n = document.createElement('div'); n.className='fw-notes'; n.textContent = b.notes;
-          meta.appendChild(n);
-        }
+      const topLine = document.createElement('div');
+      topLine.className = 'fw-line';
+      const vSpan = document.createElement('span'); vSpan.className = 'fw-version'; vSpan.textContent = b.version || 'v?';
+      topLine.appendChild(vSpan);
+      if (b.date){
+        const dSpan = document.createElement('span'); dSpan.className='fw-date'; dSpan.textContent = b.date;
+        topLine.appendChild(dSpan);
+      }
+      if (b.label){
+        const lSpan = document.createElement('span'); lSpan.className='fw-label'; lSpan.textContent = b.label;
+        topLine.appendChild(lSpan);
+      }
 
-        const lab = document.createElement('label');
-        lab.htmlFor = id;
+      meta.appendChild(topLine);
 
-        item.appendChild(radio);
-        item.appendChild(meta);
-        fwList.appendChild(item);
+      if (b.notes){
+        const n = document.createElement('div'); n.className='fw-notes'; n.textContent = b.notes;
+        meta.appendChild(n);
+      }
 
-        // Ensure selectedBuild set once after first render
-        if (!selectedBuild && radio.checked) selectedBuild = b;
-      });
-    }
+      const lab = document.createElement('label');
+      lab.htmlFor = id;
 
-    
-// Put the chip in ROM bootloader before connect():
-async function forceIntoBootloader(transport) {
-  // Assert BOOT (GPIO0 low): DTR=true
-  try { await transport.setDTR(true); } catch {}
-  await new Promise(r => setTimeout(r, 20));
+      item.appendChild(radio);
+      item.appendChild(meta);
+      fwList.appendChild(item);
 
-  // Pulse reset (EN low->high): RTS=true (low), then RTS=false (high)
-  try { await transport.setRTS(true); } catch {}
-  await new Promise(r => setTimeout(r, 60));
-  try { await transport.setRTS(false); } catch {}
+      if (!selectedBuild && radio.checked) selectedBuild = b;
+    });
+  }
 
-  // Keep BOOT a little, then release so the *next* reset can run the app
-  await new Promise(r => setTimeout(r, 80));
-  try { await transport.setDTR(false); } catch {}
-  await new Promise(r => setTimeout(r, 40));
-}
+  async function loadManifest() {
+    w('Manifest: fetching webflash/manifest.json …');
+    const resp = await fetch('https://nollstead.github.io/BTAudio/webflash/manifest.json', { cache: 'no-cache' });
+    w(`Manifest: HTTP status ${resp.status}`);
+    if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!Array.isArray(data.builds)) throw new Error('manifest: builds missing');
 
-    async function loadManifest() {
-      const resp = await fetch('https://nollstead.github.io/BTAudio/webflash/manifest.json', { cache: 'no-cache' });
-      if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
-      const data = await resp.json();
-      if (!Array.isArray(data.builds)) throw new Error('manifest: builds missing');
-
-      // Sort: newest semver first, then by date desc if present
-      data.builds.sort((a,b) => {
-        const sv = compareSemverDesc(a.version||'0.0.0', b.version||'0.0.0');
-        if (sv !== 0) return sv;
-        return String(b.date||'').localeCompare(String(a.date||''));
-      });
-
-      manifest = data;
-      selectedBuild = null;
-      renderFwList(data.builds);
-    }
-
-    // Load manifest; if it fails, fall back to current single image
-    loadManifest().catch(e => {
-      fwList.innerHTML = '';
-      const fallback = {
-        version: 'current',
-        chipFamily: 'ESP32',
-        parts: [{ path: 'webflash/BTAudio.bin', offset: 0 }]
-      };
-      selectedBuild = fallback;
-      const div = document.createElement('div');
-      div.className='fw-item';
-      div.innerHTML = `<input type="radio" name="fwPick" checked style="margin-top:2px">
-                       <div class="fw-meta">
-                         <div class="fw-line">
-                           <span class="fw-version">current</span>
-                           <span class="fw-date">manifest unavailable</span>
-                         </div>
-                         <div class="fw-notes">Using default BTAudio.bin</div>
-                       </div>`;
-      fwList.appendChild(div);
-      w(`Manifest load failed (${e?.message||e}). Using fallback image.`);
+    data.builds.sort((a,b) => {
+      const sv = compareSemverDesc(a.version||'0.0.0', b.version||'0.0.0');
+      if (sv !== 0) return sv;
+      return String(b.date||'').localeCompare(String(a.date||''));
     });
 
-    // ---------------------- Disconnect helper -----------------------
-    async function disconnectClean(){
-      try { 
-        try{ await transport?.disconnect?.(); }catch{}; 
-        try{ await loader?.flashFinish?.(false); }catch{}; 
+    manifest = data;
+    selectedBuild = null;
+    renderFwList(data.builds);
+    w(`Manifest: loaded ${data.builds.length} build(s); newest = ${data.builds[0]?.version||'n/a'}`);
+  }
 
-        // Release control lines so we don't hold BOOT/EN accidentally
-        try { await transport?.setDTR?.(false); } catch {}
-        try { await transport?.setRTS?.(false); } catch {}
-        try { await port?.close?.(); } catch {}
-      }
-      finally {
-        try { await port?.close?.(); } catch {}
-        port=transport=loader=null; connected=false; stubReady=false;
-        connectBtn.disabled=false; flashBtn.disabled=true; disconnectBtn.disabled=true;
-        w('Disconnected and port closed.');
-      }
+  loadManifest().catch(e => {
+    fwList.innerHTML = '';
+    const fallback = {
+      version: 'current',
+      chipFamily: 'ESP32',
+      parts: [{ path: 'webflash/BTAudio.bin', offset: 0 }]
+    };
+    selectedBuild = fallback;
+    const div = document.createElement('div');
+    div.className='fw-item';
+    div.innerHTML = `<input type="radio" name="fwPick" checked style="margin-top:2px">
+                     <div class="fw-meta">
+                       <div class="fw-line">
+                         <span class="fw-version">current</span>
+                         <span class="fw-date">manifest unavailable</span>
+                       </div>
+                       <div class="fw-notes">Using default BTAudio.bin</div>
+                     </div>`;
+    fwList.appendChild(div);
+    w(`Manifest: load failed (${e?.message||e}). Using fallback image.`);
+  });
+
+  // ---------- Control-line helpers with diagnostics ----------
+  async function setLine(name, value) {
+    try {
+      if (name === 'DTR') { await transport.setDTR(value); w(`CTRL: setDTR(${value}) OK`); }
+      else if (name === 'RTS') { await transport.setRTS(value); w(`CTRL: setRTS(${value}) OK`); }
+    } catch (e) {
+      w(`CTRL: set${name}(${value}) FAILED: ${e?.message||e}`);
     }
-    disconnectBtn.onclick = disconnectClean;
+  }
 
-    // -------------------------- CONNECT -----------------------------
-    connectBtn.onclick = async () => {
-      connectBtn.disabled = true;
+  // Put the chip in ROM bootloader before connect()
+  async function forceIntoBootloader(transport) {
+    w('BOOTFLOW: Forcing ROM loader (GPIO0 low at EN rising) …');
+    await setLine('DTR', false); // ensure neutral first (GPIO0 HIGH)
+    await setLine('RTS', false); // ensure neutral first (EN HIGH)
+    await sleep(20);
+
+    // 1) Assert BOOT (GPIO0 low): DTR=true
+    await setLine('DTR', true);
+    await sleep(20);
+
+    // 2) Pulse EN low->high (active-low): RTS=true (EN low) then false (EN high)
+    await setLine('RTS', true);
+    await sleep(100); // broaden to 100ms for robustness
+    await setLine('RTS', false);
+    w('BOOTFLOW: EN rising occurred while GPIO0 was LOW → device should be in ROM loader');
+
+    // 3) After entering ROM, release BOOT so next reset can run app
+    await sleep(80);
+    await setLine('DTR', false);
+    await sleep(40);
+
+    w('BOOTFLOW: Completed forceIntoBootloader sequence');
+  }
+
+  // Run app after flashing: GPIO0 high + EN pulse
+  async function hardResetToApp(transport) {
+    w('RUNFLOW: Forcing run-app (GPIO0 HIGH at EN rising) …');
+    // Make sure BOOT is released (GPIO0 high)
+    await setLine('DTR', false);
+
+    // Pulse EN low (active-low) then high
+    await setLine('RTS', true);   // EN low (reset)
+    await sleep(120);
+    await setLine('RTS', false);  // EN high -> app runs
+    await sleep(150);
+
+    // Leave both lines de-asserted (idle)
+    await setLine('DTR', false);
+    await setLine('RTS', false);
+    w('RUNFLOW: Completed hardResetToApp sequence');
+  }
+
+  // ---------- Disconnect helper ----------
+  async function disconnectClean(){
+    w('DISCONNECT: Begin cleanup …');
+    try {
+      try{ await transport?.disconnect?.(); w('DISCONNECT: transport.disconnect() OK'); }catch(e){ w(`DISCONNECT: transport.disconnect() err: ${e?.message||e}`); }
+      try{ await loader?.flashFinish?.(false); w('DISCONNECT: loader.flashFinish(false) OK'); }catch(e){ w(`DISCONNECT: flashFinish(false) err: ${e?.message||e}`); }
+
+      // Release control lines so we don't hold BOOT/EN accidentally
+      await setLine('DTR', false);
+      await setLine('RTS', false);
+    } finally {
+      try { await port?.close?.(); w('DISCONNECT: port.close() OK'); } catch(e){ w(`DISCONNECT: port.close() err: ${e?.message||e}`); }
+      port=transport=loader=null; connected=false; stubReady=false;
+      connectBtn.disabled=false; flashBtn.disabled=true; disconnectBtn.disabled=true;
+      w('DISCONNECT: Completed; UI reset.');
+    }
+  }
+  disconnectBtn.onclick = disconnectClean;
+
+  // ---------- Connect (force bootloader, then stock esptool-js connect) ----------
+  connectBtn.onclick = async () => {
+    if (__connecting) { w('CONNECT: Already connecting; ignoring click.'); return; }
+    __connecting = true;
+    connectBtn.disabled = true;
+
+    try {
+      if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
+
+      w(`ENV: UA=${navigator.userAgent}`);
+      port = await navigator.serial.requestPort({ filters: FILTERS });
+      const info = port.getInfo?.()||{};
+      w(`CONNECT: Port chosen -> VID=0x${(info.usbVendorId||0).toString(16)} PID=0x${(info.usbProductId||0).toString(16)}`);
+
+      transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+      loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+
+      // Neutralize lines first
+      await setLine('DTR', false);
+      await setLine('RTS', false);
+      await sleep(20);
+
+      // Force ROM bootloader (equivalent to BOOT+EN)
+      await forceIntoBootloader(transport);
+
+      // Let esptool-js run the stock sync (can take several seconds)
+      w('CONNECT: Calling ESPLoader.connect() …');
+      await loader.connect();
+      connected = true;
+      w('CONNECT: ESPLoader.connect() -> SUCCESS');
+
+      // Upload stub (like Launchpad) → run at higher baud
       try {
-        if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
+        w('STUB: Uploading/running stub …');
+        await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
+        stubReady = true;
+        w('STUB: Stub running.');
+      } catch (e) {
+        w(`STUB: Stub load failed (continuing): ${e?.message || e}`);
+      }
 
-        port = await navigator.serial.requestPort({ filters: FILTERS });
-        w('esptool.js');
-        const info = port.getInfo?.()||{};
-        w(`Serial port WebSerial VendorID 0x${(info.usbVendorId||0).toString(16)} ProductID 0x${(info.usbProductId||0).toString(16)}`);
-        w('Connecting...');
+      // Change baud to 921600
+      try {
+        w(`BAUD: Changing baudrate to ${FAST_BAUD} …`);
+        await loader.changeBaud(FAST_BAUD);
+        w('BAUD: Changed.');
+      } catch (e) {
+        w(`BAUD: Change failed (continuing at ${OPEN_BAUD}): ${e?.message||e}`);
+      }
 
-        transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
-        //loader = new ESPLoader({ transport, baudrate: OPEN_BAUD });      // No terminal output
-        loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+      // Flash ID & size
+      try {
+        const id = await loader.flashId();
+        if (id) {
+          const man = (id >> 16) & 0xff, dev = id & 0xffff;
+          w(`FLASHID: Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+        }
+      } catch (e) { w(`FLASHID: Failed: ${e?.message||e}`); }
+      try {
+        if (typeof loader.detectFlashSize === 'function') {
+          const sizeStr = await loader.detectFlashSize();
+          w(`FLASHID: Detected flash size = ${sizeStr}`);
+        }
+      } catch (e) { w(`FLASHID: Size detect failed: ${e?.message||e}`); }
 
-        // NOTE: esptool-js connect() performs the standard DevKitC auto-reset via DTR/RTS
+      flashBtn.disabled = !connected; disconnectBtn.disabled = !connected;
 
-try { await transport.setDTR(false); } catch {}
-try { await transport.setRTS(false); } catch {}
-await forceIntoBootloader(transport);
-        await loader.connect();     // may take a while; let it run
-        connected = true;
+    } catch (e) {
+      w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
+      try { await transport?.disconnect?.(); } catch {}
+      try { await port?.close?.(); } catch {}
+      connectBtn.disabled = false;
+    } finally {
+      __connecting = false;
+    }
+  };
 
-        // Upload stub (like Launchpad) → run at higher baud
-        //w('Uploading stub...');
+  // ---------- Binary-string conversion for older bundles / compatibility ----------
+  function u8ToBinaryString(u8) {
+    let b = '';
+    const CHUNK = 1 << 15; // 32 KB
+    for (let i = 0; i < u8.length; i += CHUNK) {
+      b += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+    }
+    return b;
+  }
+
+  // ---------- FLASH (single or multi) from manifest ----------
+  flashBtn.onclick = async () => {
+    flashBtn.disabled = true;
+    try {
+      if (!selectedBuild || !Array.isArray(selectedBuild.parts) || selectedBuild.parts.length === 0) {
+        throw new Error('No firmware selected.');
+      }
+      w(`FLASH: Preparing to write ${selectedBuild.parts.length} file(s) for version ${selectedBuild.version||'n/a'} …`);
+
+      // Fetch all parts
+      const fileArray = [];
+      for (const p of selectedBuild.parts) {
+        let addr = Number(p.offset);
+        if (!Number.isFinite(addr)) addr = parseInt(String(p.offset), 0);
+        if (!Number.isFinite(addr)) throw new Error(`Invalid offset: ${p.offset}`);
+
+        const url = p.path.startsWith('http') ? p.path : p.path;
+        w(`FLASH: Fetching ${url} @ 0x${addr.toString(16)} …`);
+        const resp = await fetch(`${url}?v=${encodeURIComponent(selectedBuild.version||'')}`, { cache: 'no-cache' });
+        w(`FLASH: HTTP status ${resp.status} for ${url}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+        const u8 = new Uint8Array(await resp.arrayBuffer());
+        w(`FLASH: Downloaded ${u8.length} bytes from ${url}`);
+
+        // Use binary-string for broad compatibility with browser bundles
+        fileArray.push({ address: addr, data: u8ToBinaryString(u8) });
+      }
+
+      // Ensure stub (usually already running)
+      if (!stubReady) {
+        w('STUB: Uploading stub (pre-flash) …');
         try {
           await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
-          //w('Running stub...');
-          //w('Stub running...');
+          w('STUB: Stub running.');
           stubReady = true;
-        } catch (e) {
-          w(`Stub load failed: ${e?.message || e}`); // continue anyway
-        }
-
-        // Change baud to 921600 (faster flashing)
-        try {
-          w(`Changing baudrate to ${FAST_BAUD}`);
-          await loader.changeBaud(FAST_BAUD);
-          w('Changed');
-        } catch (e) {
-          w(`Baud change failed (continuing at ${OPEN_BAUD})`);
-        }
-
-        // Flash ID & size (informational)
-        try {
-          const id = await loader.flashId();
-          if (id) {
-            const man = (id >> 16) & 0xff, dev = id & 0xffff;
-            w(`Manufacturer: ${man.toString(16)}`);
-            w(`Device: ${dev.toString(16)}`);
-          }
-        } catch {}
-        try {
-          if (typeof loader.detectFlashSize === 'function') {
-            const sizeStr = await loader.detectFlashSize();
-            w(`Detected flash size: ${sizeStr}`);
-          }
-        } catch {}
-
-        flashBtn.disabled = !connected; disconnectBtn.disabled = !connected;
-
-      } catch (e) {
-        w(`Connect failed: ${e?.message || e}`);
-        try { await transport?.disconnect?.(); } catch {}
-        try { await port?.close?.(); } catch {}
-        connectBtn.disabled = false;
+        } catch (e) { w(`STUB: Stub load failed (continuing): ${e?.message||e}`); }
       }
-    };
 
-    function u8ToBinaryString(u8) {
-      let b = '';
-      const CHUNK = 1 << 15; // 32 KB
-      for (let i = 0; i < u8.length; i += CHUNK) {
-        b += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
-      }
-      return b;
+      w('FLASH: Erasing flash (may take a while) …');
+      await loader.eraseFlash();
+      w('FLASH: Erase complete.');
+
+      w('FLASH: Writing images …');
+      await loader.writeFlash({
+        fileArray,                 // supports single or multi
+        flashSize: 'keep',
+        flashMode: 'keep',
+        flashFreq: 'keep',
+        compress: true,
+        reportProgress: (idx, written, total) => {
+          if (total>0) w(`FLASH: File ${idx+1}/${fileArray.length} – ${Math.round((written/total)*100)}%`);
+        }
+      });
+      w('FLASH: Write complete.');
+
+      w('FINALIZE: flashFinish(true) to reboot …');
+      try { await loader.flashFinish(true); w('FINALIZE: flashFinish(true) OK'); } catch(e){ w(`FINALIZE: flashFinish(true) err: ${e?.message||e}`); }
+      await sleep(150);
+
+      w('FINALIZE: Forcing run-app via EN pulse …');
+      try { await hardResetToApp(transport); } catch(e){ w(`FINALIZE: hardResetToApp err: ${e?.message||e}`); }
+      await sleep(120);
+
+      w('DONE: Flash complete. Device rebooted.');
+      await disconnectClean();
+
+    } catch (e) {
+      w(`FLASH: FAILED: ${e?.message || e}`);
+      flashBtn.disabled=false;
     }
-    
-    // Active‑low control lines (CP2102N on LyraT):
-    //  - DTR LOW  (true)  -> GPIO0 pulled LOW (BOOT held)
-    //  - RTS LOW  (true)  -> EN pulled LOW   (reset asserted)
-    // To run the app: GPIO0 HIGH (DTR=false) then pulse EN (RTS=true -> false)
-    async function hardResetToApp(transport) {
-      // Make sure BOOT is released (GPIO0 high)
-      try { await transport.setDTR(false); } catch {}
-      // Pulse reset
-      try { await transport.setRTS(true); } catch {}   // EN low
-      await new Promise(r => setTimeout(r, 80));
-      try { await transport.setRTS(false); } catch {}  // EN high -> app runs
-      await new Promise(r => setTimeout(r, 120));
-      // Leave both lines de‑asserted (idle high on pins)
-      try { await transport.setDTR(false); } catch {}
-      try { await transport.setRTS(false); } catch {}
-    }
+  };
 
+  // ---------- On unload: best effort close ----------
+  window.addEventListener('unload',()=>{
+    try{ transport?.disconnect?.(); }catch{}
+    try{ port?.close?.(); }catch{}
+  });
 
-    // --------------------------- FLASH ------------------------------
-    // Use the selected build's parts list (single or multi) from manifest
-    flashBtn.onclick = async () => {
-      flashBtn.disabled = true;
-      try {
-        if (!selectedBuild || !Array.isArray(selectedBuild.parts) || selectedBuild.parts.length === 0) {
-          throw new Error('No firmware selected.');
-        }
+  // Enable Connect when ESPLoader is present
+  connectBtn.disabled = !(Transport && ESPLoader);
+  w('READY: Page initialized. Click Connect to begin.');
+</script>
 
-        // Fetch all parts
-        const fileArray = [];
-        for (const p of selectedBuild.parts) {
-          // Convert offset -> address number (supports 0 or "0x10000" style)
-          let addr = Number(p.offset);
-          if (!Number.isFinite(addr)) addr = parseInt(String(p.offset), 0);
-          if (!Number.isFinite(addr)) throw new Error(`Invalid offset: ${p.offset}`);
-
-          const url = p.path.startsWith('http') ? p.path : p.path;
-          const resp = await fetch(`${url}?v=${encodeURIComponent(selectedBuild.version||'')}`, { cache: 'no-cache' });
-          if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
-          const u8 = new Uint8Array(await resp.arrayBuffer());
-
-          //fileArray.push({ address: addr, data: u8 });
-          fileArray.push({ address: addr, data: u8ToBinaryString(u8) });        }
-
-        // Ensure stub (usually already running)
-        if (!stubReady) {
-          w('Uploading stub...');
-          try {
-            await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
-            w('Running stub...'); w('Stub running...'); stubReady = true;
-          } catch (e) { w(`Stub load failed: ${e?.message||e}`); }
-        }
-
-        await loader.eraseFlash();
-
-        await loader.writeFlash({
-          fileArray,                 // supports single or multi
-          flashSize: 'keep',
-          flashMode: 'keep',
-          flashFreq: 'keep',
-          compress: true,
-          reportProgress: (idx, written, total) => {
-            if (total>0) 
-              w(`Writing (${idx+1}/${fileArray.length})… ${Math.round((written/total)*100)}%`);
-          }
-        });
-
-        w('Finalizing…');
-        // Ask esptool-js to reset/run the app after flashing:
-        try { await loader.flashFinish(true); } catch {}
-        // Optional: short grace so the reset isn’t racing our close()
-        await new Promise(r => setTimeout(r, 150));
-
-        // Ensure the board exits bootloader and runs the app (no power‑cycle needed)
-        try { await hardResetToApp(transport); } catch {}
-        await new Promise(r => setTimeout(r, 120));
-
-        w('Flash complete. Device rebooted.');
-        await disconnectClean();
-
-      } catch (e) {
-        w(`Flash failed: ${e?.message || e}`);
-        flashBtn.disabled=false;
-      }
-    };
-
-    // Prevent leaving the COM port open if the page is closed/reloaded
-    window.addEventListener('unload',()=>{ try{ transport?.disconnect?.(); }catch{}; try{ port?.close?.(); }catch{}; });
-
-    // Enable connect once ESPLoader is present
-    connectBtn.disabled = !(Transport && ESPLoader);
-  </script>
 </body>
 </html>
