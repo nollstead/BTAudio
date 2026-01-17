@@ -32,7 +32,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">V=6</p>
+  <p class="muted">V=7</p>
 
   <div class="panel">
     <div class="row">
@@ -65,7 +65,6 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Hosted esptool-js (Espressif), v0.5.7: supports Uint8Array in writeFlash -->
 
 <script type="module">
   /********************************************************************
@@ -81,7 +80,6 @@
   const logEl = document.getElementById('log');
   function ts() { return new Date().toLocaleTimeString(); }
   function w(s){ logEl.value += `[${ts()}] ${s}\n`; logEl.scrollTop = logEl.scrollHeight; }
-  // Pipe esptool-js messages into our log (kept ON for diagnostics)
   const term = { clean(){}, writeLine(s){ if(s) w(`ESPLoader: ${s}`); }, write(s){ if(s) w(`ESPLoader: ${s}`); } };
 
   // ---------- DOM ----------
@@ -94,13 +92,12 @@
   let port=null, transport=null, loader=null, connected=false, stubReady=false;
   const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
   const FAST_BAUD = 921600;
-  // Silicon Labs CP210x (LyraT) + WCH CH340C (SparkFun) for interim testing
   const FILTERS = [
-    { usbVendorId: 0x10c4 },                      // CP210x
-    { usbVendorId: 0x1a86, usbProductId: 0x7523 } // CH340C
+    { usbVendorId: 0x10c4 },                      // CP210x (LyraT)
+    { usbVendorId: 0x1a86, usbProductId: 0x7523 } // CH340C (SparkFun)
   ];
   const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
-  let __connecting = false; // simple re-entrancy guard
+  let __connecting = false; // re-entrancy guard
 
   // ---------- Manifest-driven picker ----------
   let manifest=null, selectedBuild=null;
@@ -154,9 +151,6 @@
         meta.appendChild(n);
       }
 
-      const lab = document.createElement('label');
-      lab.htmlFor = id;
-
       item.appendChild(radio);
       item.appendChild(meta);
       fwList.appendChild(item);
@@ -172,13 +166,11 @@
     if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
     const data = await resp.json();
     if (!Array.isArray(data.builds)) throw new Error('manifest: builds missing');
-
     data.builds.sort((a,b) => {
       const sv = compareSemverDesc(a.version||'0.0.0', b.version||'0.0.0');
       if (sv !== 0) return sv;
       return String(b.date||'').localeCompare(String(a.date||''));
     });
-
     manifest = data;
     selectedBuild = null;
     renderFwList(data.builds);
@@ -217,11 +209,11 @@
     }
   }
 
-  // Put the chip in ROM bootloader before connect()
+  // Put the chip in ROM bootloader before connect() – REQUIRES PORT OPEN
   async function forceIntoBootloader(transport) {
     w('BOOTFLOW: Forcing ROM loader (GPIO0 low at EN rising) …');
-    await setLine('DTR', false); // ensure neutral first (GPIO0 HIGH)
-    await setLine('RTS', false); // ensure neutral first (EN HIGH)
+    await setLine('DTR', false); // neutral
+    await setLine('RTS', false); // neutral
     await sleep(20);
 
     // 1) Assert BOOT (GPIO0 low): DTR=true
@@ -242,7 +234,7 @@
     w('BOOTFLOW: Completed forceIntoBootloader sequence');
   }
 
-  // Run app after flashing: GPIO0 high + EN pulse
+  // Run app after flashing: GPIO0 high + EN pulse – REQUIRES PORT OPEN
   async function hardResetToApp(transport) {
     w('RUNFLOW: Forcing run-app (GPIO0 HIGH at EN rising) …');
     // Make sure BOOT is released (GPIO0 high)
@@ -266,8 +258,6 @@
     try {
       try{ await transport?.disconnect?.(); w('DISCONNECT: transport.disconnect() OK'); }catch(e){ w(`DISCONNECT: transport.disconnect() err: ${e?.message||e}`); }
       try{ await loader?.flashFinish?.(false); w('DISCONNECT: loader.flashFinish(false) OK'); }catch(e){ w(`DISCONNECT: flashFinish(false) err: ${e?.message||e}`); }
-
-      // Release control lines so we don't hold BOOT/EN accidentally
       await setLine('DTR', false);
       await setLine('RTS', false);
     } finally {
@@ -279,7 +269,7 @@
   }
   disconnectBtn.onclick = disconnectClean;
 
-  // ---------- Connect (force bootloader, then stock esptool-js connect) ----------
+  // ---------- Connect (OPEN PORT -> force bootloader -> stock connect) ----------
   connectBtn.onclick = async () => {
     if (__connecting) { w('CONNECT: Already connecting; ignoring click.'); return; }
     __connecting = true;
@@ -293,24 +283,31 @@
       const info = port.getInfo?.()||{};
       w(`CONNECT: Port chosen -> VID=0x${(info.usbVendorId||0).toString(16)} PID=0x${(info.usbProductId||0).toString(16)}`);
 
+      // IMPORTANT: open the port BEFORE using setSignals(DTR/RTS)
+      try {
+        await port.open({ baudRate: OPEN_BAUD });
+        w(`CONNECT: port.open({ baudRate: ${OPEN_BAUD} }) OK`);
+      } catch (e) {
+        w(`CONNECT: port.open() FAILED: ${e?.message||e}`);
+        throw e;
+      }
+
       transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
       loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
-      // Neutralize lines first
+      // Ensure neutral lines, then force ROM loader (equivalent to BOOT+EN by hand)
       await setLine('DTR', false);
       await setLine('RTS', false);
       await sleep(20);
-
-      // Force ROM bootloader (equivalent to BOOT+EN)
       await forceIntoBootloader(transport);
 
-      // Let esptool-js run the stock sync (can take several seconds)
+      // Stock esptool-js sync (can take several seconds)
       w('CONNECT: Calling ESPLoader.connect() …');
       await loader.connect();
       connected = true;
       w('CONNECT: ESPLoader.connect() -> SUCCESS');
 
-      // Upload stub (like Launchpad) → run at higher baud
+      // Upload stub → run at higher baud
       try {
         w('STUB: Uploading/running stub …');
         await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
@@ -356,7 +353,7 @@
     }
   };
 
-  // ---------- Binary-string conversion for older bundles / compatibility ----------
+  // ---------- Binary-string conversion for broad bundle compatibility ----------
   function u8ToBinaryString(u8) {
     let b = '';
     const CHUNK = 1 << 15; // 32 KB
@@ -410,7 +407,7 @@
 
       w('FLASH: Writing images …');
       await loader.writeFlash({
-        fileArray,                 // supports single or multi
+        fileArray,
         flashSize: 'keep',
         flashMode: 'keep',
         flashFreq: 'keep',
@@ -425,6 +422,7 @@
       try { await loader.flashFinish(true); w('FINALIZE: flashFinish(true) OK'); } catch(e){ w(`FINALIZE: flashFinish(true) err: ${e?.message||e}`); }
       await sleep(150);
 
+      // We still own the port; explicitly force run-app via EN pulse
       w('FINALIZE: Forcing run-app via EN pulse …');
       try { await hardResetToApp(transport); } catch(e){ w(`FINALIZE: hardResetToApp err: ${e?.message||e}`); }
       await sleep(120);
@@ -448,6 +446,7 @@
   connectBtn.disabled = !(Transport && ESPLoader);
   w('READY: Page initialized. Click Connect to begin.');
 </script>
+
 
 </body>
 </html>
