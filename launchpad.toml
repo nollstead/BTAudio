@@ -2,7 +2,7 @@ esp_toml_version = 1.0
 
 # Base URL where the images live (used to resolve relative paths below)
 firmware_images_url = "https://nollstead.github.io/BTAudio/webflash/"
-supported_apps = ["BTAudio_0_0_1", "BTAudio_0_0_1", "BTAudio_0_0_0"]
+supported_apps = ["BTAudio_0_0_2", "BTAudio_0_0_1", "BTAudio_0_0_0"]
 
 [BTAudio_0_0_2]
 chipsets = ["ESP32"]
