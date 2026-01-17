@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test</h1>
+  <h1>BTAudio – Minimal Flash Test v2</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -74,6 +74,18 @@
 
     // ---------- Helpers ----------
     const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+    
+// Convert Uint8Array -> binary string (compatible with browser bundles that
+// still call .charCodeAt() internally during writeFlash)
+function u8ToBinaryString(u8) {
+  let s = '';
+  const CHUNK = 1 << 15; // 32 KB
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+  }
+  return s;
+}
 
     async function safeDisconnect() {
       w('DISCONNECT: Begin cleanup …');
@@ -148,55 +160,7 @@
       }
     };
 
-    // ---------- Flash ----------
-    btnFlash.onclick = async () => {
-      btnFlash.disabled = true;
-      try {
-        // Fetch binary
-        w(`FLASH: Fetching ${BIN_URL} …`);
-        const resp = await fetch(`${BIN_URL}?t=${Date.now()}`, { cache:'no-cache' });
-        w(`FLASH: HTTP status ${resp.status}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${BIN_URL}`);
-        const u8 = new Uint8Array(await resp.arrayBuffer());
-        w(`FLASH: Downloaded ${u8.length} bytes`);
 
-        // (Optional) Erase
-        if (ERASE_FIRST) {
-          w('FLASH: Erasing flash (this may take a while) …');
-          await loader.eraseFlash();
-          w('FLASH: Erase complete.');
-        } else {
-          w('FLASH: Erase skipped by config.');
-        }
-
-        // Write
-        w('FLASH: Writing image …');
-        await loader.writeFlash({
-          fileArray: [{ address: BIN_ADDRESS, data: u8 }],   // Uint8Array supported by 0.5.7
-          flashSize: 'keep',
-          flashMode: 'keep',
-          flashFreq: 'keep',
-          compress: true,
-          reportProgress: (idx, written, total) => {
-            if (total>0) w(`FLASH: ${Math.round((written/total)*100)}%`);
-          }
-        });
-        w('FLASH: Write complete.');
-
-        // Finish & reset/run app
-        w('FINALIZE: flashFinish(true) to reboot …');
-        try { await loader.flashFinish(true); w('FINALIZE: flashFinish(true) OK'); }
-        catch(e){ w(`FINALIZE: flashFinish(true) err: ${e?.message||e}`); }
-
-        // Small grace so the reset doesn’t race our close()
-        await sleep(150);
-        w('DONE: Flash complete. If connected, the device should now reboot into your app.');
-
-      } catch (e) {
-        w(`FLASH: FAILED: ${e?.message || e}`);
-        btnFlash.disabled = false;
-      }
-    };
 
     // ---------- Disconnect ----------
     btnDisconnect.onclick = safeDisconnect;
