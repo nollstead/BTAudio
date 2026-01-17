@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Serial Reset Test v4</h1>
+  <h1>BTAudio – Serial Reset Test v5</h1>
   <p class="muted">Purpose: validate **open → enter bootloader → esptool connect → run app → disconnect** using CP2102N (LyraT v4.3).</p>
 
   <div class="panel">
@@ -185,18 +185,18 @@
 
       // Hold BOOT low
       await setBOOT_EN(true, false, 'BOOTFLOW');  // BOOT LOW, EN HIGH
-      await sleep(40);
+      await sleep(80);
 
       // EN pulse (active-low), BOOT remains low
       await setBOOT_EN(true, true, 'BOOTFLOW');   // EN LOW
-      await sleep(150);
+      await sleep(250);
       await setBOOT_EN(true, false, 'BOOTFLOW');  // EN HIGH -> sample BOOT LOW -> ROM loader
       w('BOOTFLOW: EN rising occurred with GPIO0 LOW (device should be in ROM loader).');
 
       // Release BOOT afterwards
-      await sleep(120);
+      await sleep(200);
       await setBOOT_EN(false, false, 'BOOTFLOW'); // BOOT HIGH, EN HIGH
-      await sleep(60);
+      await sleep(120);
     }, 'BOOTFLOW');
     w('BOOTFLOW: Completed.');
   }
@@ -209,9 +209,9 @@
       // Ensure BOOT released, then pulse EN
       await setBOOT_EN(false, false, 'RUNFLOW'); // idle
       await setBOOT_EN(false, true , 'RUNFLOW'); // EN LOW
-      await sleep(150);
+      await sleep(250);
       await setBOOT_EN(false, false, 'RUNFLOW'); // EN HIGH -> run app
-      await sleep(180);
+      await sleep(220);
     }, 'RUNFLOW');
     w('RUNFLOW: Completed.');
   }
