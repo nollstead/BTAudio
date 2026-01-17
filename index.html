@@ -32,7 +32,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">V=4</p>
+  <p class="muted">V=5</p>
 
   <div class="panel">
     <div class="row">
@@ -159,6 +159,24 @@
       });
     }
 
+    
+// Put the chip in ROM bootloader before connect():
+async function forceIntoBootloader(transport) {
+  // Assert BOOT (GPIO0 low): DTR=true
+  try { await transport.setDTR(true); } catch {}
+  await new Promise(r => setTimeout(r, 20));
+
+  // Pulse reset (EN low->high): RTS=true (low), then RTS=false (high)
+  try { await transport.setRTS(true); } catch {}
+  await new Promise(r => setTimeout(r, 60));
+  try { await transport.setRTS(false); } catch {}
+
+  // Keep BOOT a little, then release so the *next* reset can run the app
+  await new Promise(r => setTimeout(r, 80));
+  try { await transport.setDTR(false); } catch {}
+  await new Promise(r => setTimeout(r, 40));
+}
+
     async function loadManifest() {
       const resp = await fetch('https://nollstead.github.io/BTAudio/webflash/manifest.json', { cache: 'no-cache' });
       if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
@@ -237,6 +255,10 @@
         loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
         // NOTE: esptool-js connect() performs the standard DevKitC auto-reset via DTR/RTS
+
+try { await transport.setDTR(false); } catch {}
+try { await transport.setRTS(false); } catch {}
+await forceIntoBootloader(transport);
         await loader.connect();     // may take a while; let it run
         connected = true;
 
