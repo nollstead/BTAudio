@@ -20,7 +20,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Serial Reset Test v2</h1>
+  <h1>BTAudio – Serial Reset Test v3</h1>
   <p class="muted">Purpose: validate **open → enter bootloader → esptool connect → run app → disconnect** using CP2102N (LyraT v4.3).</p>
 
   <div class="panel">
@@ -48,8 +48,8 @@
 <script type="module">
   /********************************************************************
    * BTAudio – Serial Reset Test (LyraT/CP2102N)
-   * Goal: OPEN via Transport -> drive DTR/RTS -> ESPLoader.connect()
-   * then run-app and disconnect, with detailed diagnostics.
+   * Goal: Temporarily open for DTR/RTS (signals), then close; let
+   *       esptool-js manage open during connect(). Ultra-verbose logs.
    ********************************************************************/
 
   import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
@@ -74,78 +74,84 @@
   const FILTERS = [{ usbVendorId: 0x10c4 }]; // CP210x (LyraT). Add CH340C if needed: {usbVendorId:0x1a86, usbProductId:0x7523}
   const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
-  // ---------- Helpers: set signals via Transport (requires transport.open()) ----------
-  async function setDTR(v){
-    try { await transport.setDTR(v); w(`CTRL: setDTR(${v}) OK`); } catch(e){ w(`CTRL: setDTR(${v}) FAIL: ${e?.message||e}`); }
+  // ---------- Low-level: temporarily open native port for signals ----------
+  async function withOpenPort(fn, label='SIG') {
+    if (!port) throw new Error('No port selected.');
+    // If the page crashed earlier, port may already be open; try close first.
+    try { await port.close(); } catch {}
+    try {
+      await port.open({ baudRate: OPEN_BAUD });
+      w(`${label}: port.open({ baudRate: ${OPEN_BAUD} }) OK`);
+    } catch (e) {
+      w(`${label}: port.open() FAILED: ${e?.message||e}`);
+      throw e;
+    }
+    try {
+      await fn();
+    } finally {
+      try { await port.close(); w(`${label}: port.close() OK`); } 
+      catch(e) { w(`${label}: port.close() err: ${e?.message||e}`); }
+    }
   }
-  async function setRTS(v){
-    try { await transport.setRTS(v); w(`CTRL: setRTS(${v}) OK`); } catch(e){ w(`CTRL: setRTS(${v}) FAIL: ${e?.message||e}`); }
+
+  async function setSignals(dtr, rts, label='SIG') {
+    try { await port.setSignals({ dataTerminalReady: !!dtr, requestToSend: !!rts }); 
+          w(`${label}: setSignals(DTR=${!!dtr}, RTS=${!!rts}) OK`); }
+    catch(e){ w(`${label}: setSignals(DTR=${!!dtr}, RTS=${!!rts}) FAIL: ${e?.message||e}`); }
   }
 
   // ---------- Enter Bootloader (GPIO0 LOW @ EN rising) ----------
   async function enterBootloader() {
     w('BOOTFLOW: Begin (GPIO0 LOW at EN rising) …');
+    await withOpenPort(async () => {
+      // Neutral (idle high)
+      await setSignals(false, false, 'BOOTFLOW'); // GPIO0 HIGH, EN HIGH
+      await sleep(20);
 
-    // Neutral (idle high)
-    await setDTR(false); // GPIO0 HIGH
-    await setRTS(false); // EN HIGH
-    await sleep(20);
+      // Hold BOOT (GPIO0 LOW)
+      await setSignals(true, false, 'BOOTFLOW');  // DTR=true
+      await sleep(40);
 
-    // Hold BOOT (GPIO0 LOW)
-    await setDTR(true);
-    await sleep(40);
+      // EN pulse (active-low)
+      await setSignals(true, true, 'BOOTFLOW');   // EN LOW
+      await sleep(150);
+      await setSignals(true, false, 'BOOTFLOW');  // EN HIGH -> ROM samples GPIO0 LOW
+      w('BOOTFLOW: EN rising occurred with GPIO0 LOW (device should be in ROM loader).');
 
-    // EN pulse (active-low)
-    await setRTS(true);   // EN LOW
-    await sleep(150);     // broadened for robustness
-    await setRTS(false);  // EN HIGH (ROM samples GPIO0=LOW) => enter bootloader
-    w('BOOTFLOW: EN rising occurred with GPIO0 LOW (device should be in ROM loader).');
-
-    // Release BOOT so a later reset can run app
-    await sleep(120);
-    await setDTR(false);
-    await sleep(60);
-
+      // Release BOOT so a later reset can run app
+      await sleep(120);
+      await setSignals(false, false, 'BOOTFLOW'); // GPIO0 HIGH, EN HIGH
+      await sleep(60);
+    }, 'BOOTFLOW');
     w('BOOTFLOW: Completed.');
   }
 
   // ---------- Run App (GPIO0 HIGH @ EN rising) ----------
   async function runApp() {
     w('RUNFLOW: Begin (GPIO0 HIGH at EN rising) …');
-    await setDTR(false); // GPIO0 HIGH
-    await setRTS(true);  // EN LOW (reset)
-    await sleep(150);
-    await setRTS(false); // EN HIGH => run app
-    await sleep(180);
-    await setDTR(false); await setRTS(false); // idle
+    await withOpenPort(async () => {
+      // Ensure BOOT released, then pulse EN
+      await setSignals(false, false, 'RUNFLOW'); // idle
+      await setSignals(false, true , 'RUNFLOW'); // EN LOW
+      await sleep(150);
+      await setSignals(false, false, 'RUNFLOW'); // EN HIGH -> run app
+      await sleep(180);
+    }, 'RUNFLOW');
     w('RUNFLOW: Completed.');
   }
 
-  // ---------- Button: Open & Select Port (via Transport, not port.open) ----------
+  // ---------- Button: Open & Select Port ----------
   btnOpen.onclick = async () => {
     try {
       if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
       w(`ENV: UA=${navigator.userAgent}`);
 
-      // 1) Choose port
       port = await navigator.serial.requestPort({ filters: FILTERS });
       const info = port.getInfo?.()||{};
       w(`OPEN: Selected port -> VID=0x${(info.usbVendorId||0).toString(16)} PID=0x${(info.usbProductId||0).toString(16)}`);
 
-      // 2) Create transport and OPEN THROUGH TRANSPORT (so esptool-js knows it's open)
-      transport = new Transport(port, false, false);
-      try {
-        // Some builds accept options; many examples just call open() without args.
-        await transport.open(); // don't call port.open() directly; ESPLoader.connect() will not re-open now
-        w(`OPEN: transport.open() OK`);
-      } catch (e) {
-        w(`OPEN: transport.open() FAILED: ${e?.message||e}`);
-        throw e;
-      }
-
-      // 3) Create loader after transport is ready
-      loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
-      w('OPEN: Transport + ESPLoader initialized.');
+      // Do NOT keep port open. We'll open/close around signals, and let esptool-js open during connect.
+      transport = null; loader = null;
 
       btnBoot.disabled = false;
       btnConnect.disabled = false;
@@ -160,35 +166,47 @@
 
   // ---------- Button: Enter Bootloader ----------
   btnBoot.onclick = async () => {
-    if (!transport) { w('BOOT: transport not ready.'); return; }
+    if (!port) { w('BOOT: port not selected.'); return; }
     await enterBootloader();
   };
 
   // ---------- Button: Connect (esptool-js) with guarded retry ----------
   btnConnect.onclick = async () => {
-    if (!loader) { w('CONNECT: loader not ready.'); return; }
+    if (!port) { w('CONNECT: port not selected.'); return; }
+
+    // Build Transport/Loader with port CLOSED; allow esptool-js to manage open
+    try { await port.close(); } catch {}
+    transport = new Transport(port, false, false);
+    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
     // Attempt 1
     try {
       w('CONNECT: Short settle before ESPLoader.connect() …');
       await sleep(60);
       w('CONNECT: Calling ESPLoader.connect() (attempt 1) …');
-      await loader.connect(); // transport is already open; ESPLoader should NOT try to re-open
+      await loader.connect();                // esptool-js will open/sync/close as needed internally
       w('CONNECT: SUCCESS (attempt 1)');
       return;
     } catch (e) {
       w(`CONNECT: attempt 1 FAILED: ${e?.message||e}`);
     }
 
-    // Retry once with stronger pulse
+    // Retry once with stronger boot pulse, then connect again
     try {
       w('CONNECT: Retrying with stronger boot pulse …');
-      await setDTR(false); await setRTS(false); await sleep(40);
-      await setDTR(true);  await sleep(60);
-      await setRTS(true);  await sleep(200);
-      await setRTS(false); w('BOOTFLOW: (retry) EN rising with GPIO0 LOW');
-      await sleep(150);
-      await setDTR(false); await sleep(80);
+      await withOpenPort(async () => {
+        await setSignals(false, false, 'RETRY');
+        await sleep(40);
+        await setSignals(true , false, 'RETRY'); // GPIO0 LOW
+        await sleep(60);
+        await setSignals(true , true , 'RETRY'); // EN LOW
+        await sleep(200);
+        await setSignals(true , false, 'RETRY'); // EN HIGH -> ROM loader
+        w('BOOTFLOW: (retry) EN rising with GPIO0 LOW');
+        await sleep(150);
+        await setSignals(false, false, 'RETRY'); // release BOOT
+        await sleep(80);
+      }, 'RETRY');
 
       w('CONNECT: Calling ESPLoader.connect() (attempt 2) …');
       await loader.connect();
@@ -200,7 +218,7 @@
 
   // ---------- Button: Run App ----------
   btnRun.onclick = async () => {
-    if (!transport) { w('RUN: transport not ready.'); return; }
+    if (!port) { w('RUN: port not selected.'); return; }
     await runApp();
   };
 
@@ -209,7 +227,6 @@
     w('CLOSE: Begin cleanup …');
     try { await transport?.disconnect?.(); w('CLOSE: transport.disconnect() OK'); } catch(e){ w(`CLOSE: transport.disconnect() err: ${e?.message||e}`); }
     try { await loader?.flashFinish?.(false); w('CLOSE: loader.flashFinish(false) OK'); } catch(e){ w(`CLOSE: flashFinish(false) err: ${e?.message||e}`); }
-    try { await setDTR(false); await setRTS(false); } catch {}
     try { await port?.close?.(); w('CLOSE: port.close() OK'); } catch(e){ w(`CLOSE: port.close() err: ${e?.message||e}`); }
     port=transport=loader=null;
     btnOpen.disabled=false; btnBoot.disabled=true; btnConnect.disabled=true; btnRun.disabled=true; btnClose.disabled=true;
