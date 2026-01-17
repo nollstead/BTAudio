@@ -32,7 +32,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">V=3</p>
+  <p class="muted">V=4</p>
 
   <div class="panel">
     <div class="row">
@@ -202,7 +202,15 @@
 
     // ---------------------- Disconnect helper -----------------------
     async function disconnectClean(){
-      try { try{ await transport?.disconnect?.(); }catch{}; try{ await loader?.flashFinish?.(false); }catch{}; }
+      try { 
+        try{ await transport?.disconnect?.(); }catch{}; 
+        try{ await loader?.flashFinish?.(false); }catch{}; 
+
+        // Release control lines so we don't hold BOOT/EN accidentally
+        try { await transport?.setDTR?.(false); } catch {}
+        try { await transport?.setRTS?.(false); } catch {}
+        try { await port?.close?.(); } catch {}
+      }
       finally {
         try { await port?.close?.(); } catch {}
         port=transport=loader=null; connected=false; stubReady=false;
@@ -225,6 +233,7 @@
         w('Connecting...');
 
         transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+        //loader = new ESPLoader({ transport, baudrate: OPEN_BAUD });      // No terminal output
         loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
         // NOTE: esptool-js connect() performs the standard DevKitC auto-reset via DTR/RTS
@@ -232,11 +241,11 @@
         connected = true;
 
         // Upload stub (like Launchpad) → run at higher baud
-        w('Uploading stub...');
+        //w('Uploading stub...');
         try {
           await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
-          w('Running stub...');
-          w('Stub running...');
+          //w('Running stub...');
+          //w('Stub running...');
           stubReady = true;
         } catch (e) {
           w(`Stub load failed: ${e?.message || e}`); // continue anyway
@@ -285,6 +294,24 @@
       }
       return b;
     }
+    
+    // Active‑low control lines (CP2102N on LyraT):
+    //  - DTR LOW  (true)  -> GPIO0 pulled LOW (BOOT held)
+    //  - RTS LOW  (true)  -> EN pulled LOW   (reset asserted)
+    // To run the app: GPIO0 HIGH (DTR=false) then pulse EN (RTS=true -> false)
+    async function hardResetToApp(transport) {
+      // Make sure BOOT is released (GPIO0 high)
+      try { await transport.setDTR(false); } catch {}
+      // Pulse reset
+      try { await transport.setRTS(true); } catch {}   // EN low
+      await new Promise(r => setTimeout(r, 80));
+      try { await transport.setRTS(false); } catch {}  // EN high -> app runs
+      await new Promise(r => setTimeout(r, 120));
+      // Leave both lines de‑asserted (idle high on pins)
+      try { await transport.setDTR(false); } catch {}
+      try { await transport.setRTS(false); } catch {}
+    }
+
 
     // --------------------------- FLASH ------------------------------
     // Use the selected build's parts list (single or multi) from manifest
@@ -328,8 +355,9 @@
           flashMode: 'keep',
           flashFreq: 'keep',
           compress: true,
-          reportProgress: (idx, written, total) => {
-            if (total>0) w(`Writing (${idx+1}/${fileArray.length})… ${Math.round((written/total)*100)}%`);
+          //reportProgress: (idx, written, total) => {
+          //  if (total>0) 
+          //    w(`Writing (${idx+1}/${fileArray.length})… ${Math.round((written/total)*100)}%`);
           }
         });
 
@@ -338,6 +366,10 @@
         try { await loader.flashFinish(true); } catch {}
         // Optional: short grace so the reset isn’t racing our close()
         await new Promise(r => setTimeout(r, 150));
+
+        // Ensure the board exits bootloader and runs the app (no power‑cycle needed)
+        try { await hardResetToApp(transport); } catch {}
+        await new Promise(r => setTimeout(r, 120));
 
         w('Flash complete. Device rebooted.');
         await disconnectClean();
