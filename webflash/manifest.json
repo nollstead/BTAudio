@@ -3,7 +3,7 @@
   "schema": 1,
   "builds": [
     {
-      "version": "0.0.1",
+      "version": "1.0.0",
       "date": "2026-01-16",
       "label": "latest update",
       "notes": "Sample notes: improved USB audio latency; added stability fixes for pairing.",
@@ -13,13 +13,13 @@
       ]
     },
     {
-      "version": "0.0.0",
+      "version": "0.0.1",
       "date": "2026-01-15",
-      "label": "Base Version",
-      "notes": "Sample notes: initial release used for bring-up and baseline testing.",
+      "label": "LyraT",
+      "notes": "LyraT Test",
       "chipFamily": "ESP32",
       "parts": [
-        { "path": "webflash/BTAudio.bin", "offset": 0 }
+        { "path": "webflash/LyraT.bin", "offset": 0 }
       ]
     }
   ]
