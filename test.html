@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Serial Reset Test v5</h1>
+  <h1>BTAudio – Serial Reset Test v6</h1>
   <p class="muted">Purpose: validate **open → enter bootloader → esptool connect → run app → disconnect** using CP2102N (LyraT v4.3).</p>
 
   <div class="panel">
@@ -174,32 +174,38 @@
     }
   }
 
-  // ---------- Enter Bootloader (GPIO0 LOW @ EN rising) ----------
-  async function enterBootloader() {
-    logMapping('BOOTFLOW');
-    w('BOOTFLOW: Begin (GPIO0 LOW at EN rising) …');
-    await withOpenPort(async () => {
-      // Neutral (BOOT released, EN high) => BOOT=false, EN=false
-      await setBOOT_EN(false, false, 'BOOTFLOW'); // GPIO0 HIGH, EN HIGH
-      await sleep(20);
 
-      // Hold BOOT low
-      await setBOOT_EN(true, false, 'BOOTFLOW');  // BOOT LOW, EN HIGH
-      await sleep(80);
+// Enter Bootloader (GPIO0 LOW at EN rising) – stretched timings
+async function enterBootloader() {
+  logMapping('BOOTFLOW');
+  w('BOOTFLOW: Begin (GPIO0 LOW at EN rising) …');
 
-      // EN pulse (active-low), BOOT remains low
-      await setBOOT_EN(true, true, 'BOOTFLOW');   // EN LOW
-      await sleep(250);
-      await setBOOT_EN(true, false, 'BOOTFLOW');  // EN HIGH -> sample BOOT LOW -> ROM loader
-      w('BOOTFLOW: EN rising occurred with GPIO0 LOW (device should be in ROM loader).');
+  await withOpenPort(async () => {
+    // 0) Neutral (BOOT released, EN high)
+    await setBOOT_EN(false, false, 'BOOTFLOW'); // GPIO0 HIGH, EN HIGH
+    await sleep(50);
 
-      // Release BOOT afterwards
-      await sleep(200);
-      await setBOOT_EN(false, false, 'BOOTFLOW'); // BOOT HIGH, EN HIGH
-      await sleep(120);
-    }, 'BOOTFLOW');
-    w('BOOTFLOW: Completed.');
-  }
+    // 1) Assert BOOT (GPIO0 LOW) and let it settle BEFORE touching EN
+    await setBOOT_EN(true, false, 'BOOTFLOW');  // BOOT LOW, EN HIGH
+    await sleep(200);                            // was 40
+
+    // 2) Drive EN LOW long enough to fully discharge EN RC
+    await setBOOT_EN(true, true, 'BOOTFLOW');   // EN LOW (reset asserted)
+    await sleep(300);                            // was 150
+
+    // 3) Release EN to HIGH while BOOT is STILL LOW → ROM should see IO0=LOW
+    await setBOOT_EN(true, false, 'BOOTFLOW');  // EN HIGH (sample occurs here)
+    w('BOOTFLOW: EN rising occurred with GPIO0 LOW (expect ROM loader).');
+
+    // 4) KEEP BOOT LOW a bit longer to ride out EN's RC slew, THEN release
+    await sleep(220);                            // was 120
+    await setBOOT_EN(false, false, 'BOOTFLOW'); // BOOT HIGH, EN HIGH
+    await sleep(120);                            // was 60
+  }, 'BOOTFLOW');
+
+  w('BOOTFLOW: Completed.');
+}
+
 
   // ---------- Run App (GPIO0 HIGH @ EN rising) ----------
   async function runApp() {
