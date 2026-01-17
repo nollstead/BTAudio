@@ -355,9 +355,9 @@
           flashMode: 'keep',
           flashFreq: 'keep',
           compress: true,
-          //reportProgress: (idx, written, total) => {
-          //  if (total>0) 
-          //    w(`Writing (${idx+1}/${fileArray.length})… ${Math.round((written/total)*100)}%`);
+          reportProgress: (idx, written, total) => {
+            if (total>0) 
+              w(`Writing (${idx+1}/${fileArray.length})… ${Math.round((written/total)*100)}%`);
           }
         });
 
