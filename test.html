@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
 <head>
@@ -47,9 +46,20 @@
 
 <script type="module">
   /********************************************************************
-   * BTAudio – Serial Reset Test (LyraT/CP2102N)
-   * Goal: Temporarily open for DTR/RTS (signals), then close; let
-   *       esptool-js manage open during connect(). Ultra-verbose logs.
+   * BTAudio – Serial Reset Test with Mapping Toggle (LyraT/CP2102N)
+   *
+   * Purpose: Validate BOOT/EN control using either mapping:
+   *   Mapping A: DTR -> GPIO0 (BOOT), RTS -> EN     (active-low)
+   *   Mapping B: DTR -> EN,              RTS -> GPIO0 (active-low)
+   *
+   * Flow:
+   *   1) Open & Select Port (does NOT keep port open)
+   *   2) Enter Bootloader  (temp open -> setSignals -> close)
+   *   3) Connect (esptool-js manages its own open/close)
+   *   4) Run App          (temp open -> setSignals -> close)
+   *   5) Disconnect & Close
+   *
+   * Super-verbose logs show every signals change and outcome.
    ********************************************************************/
 
   import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
@@ -60,24 +70,54 @@
   const w = (s)=>{ logEl.value += `[${new Date().toLocaleTimeString()}] ${s}\n`; logEl.scrollTop = logEl.scrollHeight; };
   const term = { clean(){}, writeLine(s){ if(s) w(`ESPLoader: ${s}`); }, write(s){ if(s) w(`ESPLoader: ${s}`); } };
 
-  // ---------- DOM ----------
+  // ---------- DOM (we add a mapping toggle dynamically) ----------
   const btnOpen    = document.getElementById('btnOpen');
   const btnBoot    = document.getElementById('btnBoot');
   const btnConnect = document.getElementById('btnConnect');
   const btnRun     = document.getElementById('btnRun');
   const btnClose   = document.getElementById('btnClose');
 
+  // Add mapping UI
+  const mappingRow = document.createElement('div');
+  mappingRow.style.cssText = 'margin:8px 0 0 0; display:flex; align-items:center; gap:10px;';
+  mappingRow.innerHTML = `
+    <label style="color:#bbb">Control-line mapping:</label>
+    <select id="mapSel" style="padding:6px 8px; border-radius:8px; background:#0f0f0f; color:#eaeaea; border:1px solid rgba(255,255,255,.08)">
+      <option value="A">A: DTR→GPIO0 (BOOT), RTS→EN (default)</option>
+      <option value="B">B: DTR→EN, RTS→GPIO0</option>
+    </select>
+  `;
+  btnOpen.parentElement.parentElement.appendChild(mappingRow);
+  const mapSel = mappingRow.querySelector('#mapSel');
+
   // ---------- State ----------
   let port=null, transport=null, loader=null;
   const OPEN_BAUD = 115200;
   const FAST_BAUD = 921600;
-  const FILTERS = [{ usbVendorId: 0x10c4 }]; // CP210x (LyraT). Add CH340C if needed: {usbVendorId:0x1a86, usbProductId:0x7523}
+  const FILTERS = [{ usbVendorId: 0x10c4 }]; // CP210x (LyraT)
   const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+  // ---------- Mappings ----------
+  // We do all low-level work with native SerialPort.setSignals via temporary open/close.
+  function activeMapping() { return mapSel.value || 'A'; }
+
+  // In mapping A: BOOT=DTR, EN=RTS; mapping B: BOOT=RTS, EN=DTR
+  function lineFor(name){ // name: 'BOOT' or 'EN'
+    const m = activeMapping();
+    if (m === 'A') return (name === 'BOOT') ? 'DTR' : 'RTS';
+    else           return (name === 'BOOT') ? 'RTS' : 'DTR';
+  }
+
+  // Log the current mapping
+  function logMapping(prefix='MAP'){
+    const m = activeMapping();
+    if (m === 'A') w(`${prefix}: Using Mapping A — DTR→GPIO0(BOOT), RTS→EN (active-low)`);
+    else           w(`${prefix}: Using Mapping B — DTR→EN, RTS→GPIO0(BOOT) (active-low)`);
+  }
 
   // ---------- Low-level: temporarily open native port for signals ----------
   async function withOpenPort(fn, label='SIG') {
     if (!port) throw new Error('No port selected.');
-    // If the page crashed earlier, port may already be open; try close first.
     try { await port.close(); } catch {}
     try {
       await port.open({ baudRate: OPEN_BAUD });
@@ -89,38 +129,73 @@
     try {
       await fn();
     } finally {
-      try { await port.close(); w(`${label}: port.close() OK`); } 
+      try { await port.close(); w(`${label}: port.close() OK`); }
       catch(e) { w(`${label}: port.close() err: ${e?.message||e}`); }
     }
   }
 
-  async function setSignals(dtr, rts, label='SIG') {
-    try { await port.setSignals({ dataTerminalReady: !!dtr, requestToSend: !!rts }); 
-          w(`${label}: setSignals(DTR=${!!dtr}, RTS=${!!rts}) OK`); }
-    catch(e){ w(`${label}: setSignals(DTR=${!!dtr}, RTS=${!!rts}) FAIL: ${e?.message||e}`); }
+  async function setSignalsRaw(dtr, rts, label='SIG') {
+    try {
+      await port.setSignals({ dataTerminalReady: !!dtr, requestToSend: !!rts });
+      w(`${label}: setSignals(DTR=${!!dtr}, RTS=${!!rts}) OK`);
+    } catch(e) {
+      w(`${label}: setSignals(DTR=${!!dtr}, RTS=${!!rts}) FAIL: ${e?.message||e}`);
+    }
+  }
+
+  // Handy wrappers that honor the mapping: set BOOT/EN individually (booleans are "active" levels)
+  async function setBOOT(active, label){ // active=true => pull GPIO0 low (active-low)
+    const BOOT = lineFor('BOOT'); // 'DTR' or 'RTS'
+    if (BOOT === 'DTR') return setSignalsRaw(active, undefined, label); // we'll call combined setter below, so use convenience combiner
+    else                return setSignalsRaw(undefined, active, label);
+  }
+  async function setEN(active, label){   // active=true => pull EN low (reset asserted)
+    const EN = lineFor('EN');   // 'DTR' or 'RTS'
+    if (EN === 'DTR') return setSignalsRaw(active, undefined, label);
+    else              return setSignalsRaw(undefined, active, label);
+  }
+
+  // Combined helper to set both BOOT & EN respecting mapping
+  async function setBOOT_EN(bootActive, enActive, label='SIG'){
+    const BOOT = lineFor('BOOT'), EN = lineFor('EN');
+    let dtr = undefined, rts = undefined;
+
+    if (BOOT === 'DTR') dtr = bootActive; else rts = bootActive;
+    if (EN   === 'DTR') dtr = enActive;   else rts = enActive;
+
+    try {
+      await port.setSignals({
+        dataTerminalReady: (dtr !== undefined) ? !!dtr : undefined,
+        requestToSend:     (rts !== undefined) ? !!rts : undefined
+      });
+      w(`${label}: setBOOT_EN(BOOT=${!!bootActive}, EN=${!!enActive}) -> (DTR=${dtr===undefined?'(no change)':!!dtr}, RTS=${rts===undefined?'(no change)':!!rts}) OK`);
+    } catch(e) {
+      w(`${label}: setBOOT_EN FAIL: ${e?.message||e}`);
+    }
   }
 
   // ---------- Enter Bootloader (GPIO0 LOW @ EN rising) ----------
   async function enterBootloader() {
+    logMapping('BOOTFLOW');
     w('BOOTFLOW: Begin (GPIO0 LOW at EN rising) …');
     await withOpenPort(async () => {
-      // Neutral (idle high)
-      await setSignals(false, false, 'BOOTFLOW'); // GPIO0 HIGH, EN HIGH
+      // Neutral (BOOT released, EN high) => BOOT=false, EN=false
+      await setBOOT_EN(false, false, 'BOOTFLOW'); // GPIO0 HIGH, EN HIGH
       await sleep(20);
 
-      // Hold BOOT (GPIO0 LOW)
-      await setSignals(true, false, 'BOOTFLOW');  // DTR=true
+      // Hold BOOT low
+      await setBOOT_EN(true, false, 'BOOTFLOW');  // BOOT LOW, EN HIGH
       await sleep(40);
 
-      // EN pulse (active-low)
-      await setSignals(true, true, 'BOOTFLOW');   // EN LOW
+      // EN pulse (active-low), BOOT remains low
+      await setBOOT_EN(true, true, 'BOOTFLOW');   // EN LOW
       await sleep(150);
-      await setSignals(true, false, 'BOOTFLOW');  // EN HIGH -> ROM samples GPIO0 LOW
+      await setBOOT_EN(true, false, 'BOOTFLOW');  // EN HIGH -> sample BOOT LOW -> ROM loader
       w('BOOTFLOW: EN rising occurred with GPIO0 LOW (device should be in ROM loader).');
 
-      // Release BOOT so a later reset can run app
+      // Release BOOT afterwards
       await sleep(120);
-      await setSignals(false, false, 'BOOTFLOW'); // GPIO0 HIGH, EN HIGH
+      await setBOOT_EN(false, false, 'BOOTFLOW'); // BOOT HIGH, EN HIGH
       await sleep(60);
     }, 'BOOTFLOW');
     w('BOOTFLOW: Completed.');
@@ -128,13 +203,14 @@
 
   // ---------- Run App (GPIO0 HIGH @ EN rising) ----------
   async function runApp() {
+    logMapping('RUNFLOW');
     w('RUNFLOW: Begin (GPIO0 HIGH at EN rising) …');
     await withOpenPort(async () => {
       // Ensure BOOT released, then pulse EN
-      await setSignals(false, false, 'RUNFLOW'); // idle
-      await setSignals(false, true , 'RUNFLOW'); // EN LOW
+      await setBOOT_EN(false, false, 'RUNFLOW'); // idle
+      await setBOOT_EN(false, true , 'RUNFLOW'); // EN LOW
       await sleep(150);
-      await setSignals(false, false, 'RUNFLOW'); // EN HIGH -> run app
+      await setBOOT_EN(false, false, 'RUNFLOW'); // EN HIGH -> run app
       await sleep(180);
     }, 'RUNFLOW');
     w('RUNFLOW: Completed.');
@@ -150,7 +226,7 @@
       const info = port.getInfo?.()||{};
       w(`OPEN: Selected port -> VID=0x${(info.usbVendorId||0).toString(16)} PID=0x${(info.usbProductId||0).toString(16)}`);
 
-      // Do NOT keep port open. We'll open/close around signals, and let esptool-js open during connect.
+      // Transport/loader constructed fresh for each connect
       transport = null; loader = null;
 
       btnBoot.disabled = false;
@@ -158,6 +234,8 @@
       btnRun.disabled = false;
       btnClose.disabled = false;
       btnOpen.disabled = true;
+
+      logMapping('MAP');
 
     } catch (e) {
       w(`OPEN: FAILED: ${e?.message||e}`);
@@ -174,7 +252,7 @@
   btnConnect.onclick = async () => {
     if (!port) { w('CONNECT: port not selected.'); return; }
 
-    // Build Transport/Loader with port CLOSED; allow esptool-js to manage open
+    // esptool-js should own open/close during connect()
     try { await port.close(); } catch {}
     transport = new Transport(port, false, false);
     loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
@@ -184,27 +262,27 @@
       w('CONNECT: Short settle before ESPLoader.connect() …');
       await sleep(60);
       w('CONNECT: Calling ESPLoader.connect() (attempt 1) …');
-      await loader.connect();                // esptool-js will open/sync/close as needed internally
+      await loader.connect();
       w('CONNECT: SUCCESS (attempt 1)');
       return;
     } catch (e) {
       w(`CONNECT: attempt 1 FAILED: ${e?.message||e}`);
     }
 
-    // Retry once with stronger boot pulse, then connect again
+    // Retry once: stronger boot pulse (with current mapping), then connect
     try {
       w('CONNECT: Retrying with stronger boot pulse …');
       await withOpenPort(async () => {
-        await setSignals(false, false, 'RETRY');
+        await setBOOT_EN(false, false, 'RETRY');
         await sleep(40);
-        await setSignals(true , false, 'RETRY'); // GPIO0 LOW
+        await setBOOT_EN(true , false, 'RETRY'); // BOOT LOW
         await sleep(60);
-        await setSignals(true , true , 'RETRY'); // EN LOW
+        await setBOOT_EN(true , true , 'RETRY'); // EN LOW
         await sleep(200);
-        await setSignals(true , false, 'RETRY'); // EN HIGH -> ROM loader
+        await setBOOT_EN(true , false, 'RETRY'); // EN HIGH -> ROM loader
         w('BOOTFLOW: (retry) EN rising with GPIO0 LOW');
         await sleep(150);
-        await setSignals(false, false, 'RETRY'); // release BOOT
+        await setBOOT_EN(false, false, 'RETRY'); // release BOOT
         await sleep(80);
       }, 'RETRY');
 
@@ -213,6 +291,7 @@
       w('CONNECT: SUCCESS (attempt 2)');
     } catch (e2) {
       w(`CONNECT: attempt 2 FAILED: ${e2?.message||e2}`);
+      w('HINT: If both attempts failed, try switching the mapping selector (A ↔ B) and repeat: Enter Bootloader → Connect.');
     }
   };
 
@@ -241,6 +320,7 @@
 
   w('READY: Test page loaded. 1) Open & Select Port → 2) Enter Bootloader → 3) Connect → 4) Run App → 5) Disconnect.');
 </script>
+
 
 </body>
 </html>
