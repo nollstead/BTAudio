@@ -4,6 +4,11 @@ esp_toml_version = 1.0
 firmware_images_url = "https://nollstead.github.io/BTAudio/webflash/"
 supported_apps = ["BTAudio_0_0_1", "BTAudio_0_0_0"]
 
+[BTAudio_0_0_2]
+chipsets = ["ESP32"]
+image.esp32 = "BTAudio.bin"
+description = "BTAudio v0.0.2 — added hello"
+
 [BTAudio_0_0_1]
 chipsets = ["ESP32"]
 image.esp32 = "BTAudio.bin"
