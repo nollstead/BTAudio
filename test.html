@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v20</h1>
+  <h1>BTAudio – Minimal Flash Test v21</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -185,99 +185,102 @@ btnConnect.onclick = async () => {
 };
 
 
-// CH340 connect that replicates "two clicks": (pre-boot -> connect) repeated with longer settles.
-// Mapping (SparkFun CH340 on Windows): RTS -> BOOT (GPIO0, active-LOW), DTR -> EN (reset, active-LOW)
-async function connectCH340(
-  port,
-  {
-    baud                 = OPEN_BAUD,
-    cycles               = 2,     // this mimics your two manual clicks
-    // timings widened to better match the pause you naturally had between clicks
-    neutral              = 180,   // ms
-    bootHoldBefore       = 300,   // ms BOOT low before touching EN
-    enLow                = 400,   // ms EN low (reset width)
-    bootHoldAfter        = 350,   // ms keep BOOT low AFTER EN rises (ride EN RC)
-    finalSettle          = 200,   // ms settle after releasing BOOT
-    settleBetween        = 350,   // ms between pre-boot and connect
-    settleBetweenCycles  = 400    // ms between attempts
-  } = {}
-) {
-  // ONE native pre-boot cycle (always set BOTH modem lines in every call)
-  async function prebootCycle(tag) {
-    // Ensure port closed, then open it to drive signals
+// Minimal, single-pass CH340 connect + stub + probe @115200
+// Mapping used here (SparkFun CH340 on Windows, based on your observations):
+//   RTS -> BOOT (GPIO0, active-LOW)   DTR -> EN (reset, active-LOW)
+async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
+  try {
+    // Ensure native port starts closed
     try { await port.close(); } catch {}
-    w(`${tag}: port.open() …`);
+
+    // --- Pre-boot using native setSignals() (always set BOTH DTR/RTS) ---
+    w('CH340: pre-boot -> port.open() …');
     await port.open({ baudRate: baud });
-    w(`${tag}: port.open() OK`);
+    w('CH340: port.open() OK');
 
     // 0) Neutral: EN=HIGH (DTR=false), BOOT=HIGH (RTS=false)
-    w(`${tag}: Neutral (EN=HIGH, BOOT=HIGH) hold ${neutral}ms`);
+    w('CH340: Neutral (EN=HIGH, BOOT=HIGH) hold 100ms');
     await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-    await sleep(neutral);
+    await sleep(100);
 
-    // 1) BOOT=LOW (RTS=true) – settle before touching EN
-    w(`${tag}: BOOT=LOW (RTS=true), EN=HIGH (DTR=false) hold ${bootHoldBefore}ms`);
+    // 1) BOOT=LOW (RTS=true) – hold before touching EN
+    w('CH340: BOOT=LOW (RTS=true), EN=HIGH (DTR=false) hold 220ms');
     await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-    await sleep(bootHoldBefore);
+    await sleep(220);
 
     // 2) EN=LOW (DTR=true) while BOOT stays LOW
-    w(`${tag}: EN=LOW (DTR=true), BOOT still LOW hold ${enLow}ms`);
+    w('CH340: EN=LOW (DTR=true), BOOT still LOW hold 350ms');
     await port.setSignals({ dataTerminalReady: true, requestToSend: true });
-    await sleep(enLow);
+    await sleep(350);
 
     // 3) EN=HIGH (DTR=false) — ROM samples IO0 here (still LOW)
-    w(`${tag}: EN=HIGH (DTR=false), BOOT still LOW (ROM samples) hold ${bootHoldAfter}ms`);
+    w('CH340: EN=HIGH (DTR=false), BOOT still LOW (ROM samples now) hold 280ms');
     await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-    await sleep(bootHoldAfter);
+    await sleep(280);
 
-    // 4) BOOT=HIGH (RTS=false) — release after EN is cleanly high
-    w(`${tag}: BOOT=HIGH (RTS=false) settle ${finalSettle}ms`);
+    // 4) BOOT=HIGH (RTS=false) — release after EN has cleanly risen
+    w('CH340: BOOT=HIGH (RTS=false) settle 140ms');
     await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-    await sleep(finalSettle);
+    await sleep(140);
 
-    // Close native port so esptool-js can own open() next
-    try { await port.close(); w(`${tag}: port.close() OK`); }
-    catch (e) { w(`${tag}: port.close() err: ${e?.message || e}`); }
-  }
+    // Close native port before handing to esptool‑js
+    try { await port.close(); w('CH340: port.close() OK'); } catch (e) {
+      w(`CH340: port.close() err: ${e?.message || e}`);
+    }
 
-  // Repeat the SAME sequence N times: (pre-boot -> fresh connect)
-  for (let i = 1; i <= cycles; i++) {
-    const tag = `CH340: pre-boot #${i}`;
+    // --- esptool-js connect on a fresh Transport/Loader ---
+    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+    loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
+
+    w('CONNECT(CH340): Calling ESPLoader.connect() …');
+    await loader.connect();
+    w('CONNECT(CH340): SUCCESS');
+
+    // *** Key differences vs previous run ***
+    // (A) Brief settle after connect, still @115200
+    await sleep(120);
+
+    // (B) Upload stub BEFORE probing flash, still @115200
     try {
-      await prebootCycle(tag);
-      w(`CH340: settleBetween before connect: ${settleBetween}ms`);
-      await sleep(settleBetween);
-
-      // Fresh Transport/Loader for THIS attempt
-      transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
-      loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
-
-      w(`CONNECT(CH340): Attempt ${i} – ESPLoader.connect() …`);
-      await loader.connect();
-      w(`CONNECT(CH340): SUCCESS (attempt ${i})`);
-
-      // Stop here for connect/disconnect validation (no stub/baud here).
-      return true;
-
+      w('STUB(CH340): Uploading/running stub …');
+      await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
+      w('STUB(CH340): Stub running (@115200).');
     } catch (e) {
-      w(`CONNECT(CH340): attempt ${i} FAILED: ${e?.message || e}`);
-      // Clean up before next cycle so the next pre-boot starts fresh
-      try { await transport?.disconnect?.(); } catch {}
-      try {
-        const stillOpen = !!(port && (port.readable || port.writable));
-        if (stillOpen) { await port.close(); w('CH340: port.close() (cleanup) OK'); }
-      } catch (e2) { w(`CH340: port.close() (cleanup) err: ${e2?.message || e2}`); }
+      w(`STUB(CH340): Stub load FAILED (continuing): ${e?.message || e}`);
+      // Continue anyway; ROM may still answer flashId
+    }
 
-      if (i < cycles) {
-        w(`CH340: preparing next cycle … (sleep ${settleBetweenCycles}ms)`);
-        await sleep(settleBetweenCycles);
+    // (C) Probe AFTER stub, still @115200
+    try {
+      w('PROBE(CH340): flashId() …');
+      const id = await loader.flashId();   // stay @115200 for CH340
+      const man = (id >> 16) & 0xff, dev = id & 0xffff;
+      w(`PROBE(CH340): JEDEC -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+    } catch (e) {
+      w(`PROBE(CH340): flashId FAILED (continuing): ${e?.message || e}`);
+    }
+
+    // Optional: detect size (still at 115200)
+    if (typeof loader.detectFlashSize === 'function') {
+      try {
+        w('PROBE(CH340): detectFlashSize() …');
+        const sizeStr = await loader.detectFlashSize();
+        w(`PROBE(CH340): size -> ${sizeStr}`);
+      } catch (e) {
+        w(`PROBE(CH340): detectFlashSize FAILED (continuing): ${e?.message || e}`);
       }
     }
-  }
 
-  // If we got here, all cycles failed
-  return false;
+    return true;
+
+  } catch (err) {
+    w(`CONNECT(CH340): FAILED: ${err?.message || err}`);
+    try { await transport?.disconnect?.(); } catch {}
+    try { await port?.close?.(); } catch {}
+    return false;
+  }
 }
+
 
 
 
