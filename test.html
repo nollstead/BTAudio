@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v32</h1>
+  <h1>BTAudio – Minimal Flash Test v33</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -107,11 +107,26 @@ btnConnect.onclick = async () => {
 
     w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
 
+    // CES
+    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+    w('after new esploader')
+    connected = true;
+    chipDesc = await loader.main();
+    w('after esploader.main')
+    chip = loader.chip.CHIP_NAME;    
+    await loader.flashId();
+    w('after esploader.flashid')          
+    btnDisconnect.disabled = !connected;        
+
+// end ces
+
+    /*
     switch (vendorId) {
       // --- CP210x / LyraT ---
       case 0x10c4: {
         // Proceed with your known-good flow
-        transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+        transport = new Transport(port, false, false);
         loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
         w('CONNECT: Calling ESPLoader.connect() …');
@@ -165,7 +180,7 @@ btnConnect.onclick = async () => {
             //    baudrate: parseInt(flashingBaudrateSelect.value),
             //    terminal: espLoaderTerminal
             //};
-            transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+            transport = new Transport(port, false, false);
             loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
             w('after new esploader')
             connected = true;
@@ -188,6 +203,7 @@ btnConnect.onclick = async () => {
         return;
       }
     }
+*/
   } catch (e) {
     w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
     try { await port?.close?.(); } catch {}
