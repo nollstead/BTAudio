@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v24</h1>
+  <h1>BTAudio – Minimal Flash Test v25</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -47,7 +47,7 @@
      * - No manual DTR/RTS or mapping logic
      ********************************************************************/
 
-    import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+    import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
     const { ESPLoader, Transport } = esptool;
 
     // -------- Config (edit as needed) ----------
@@ -157,17 +157,31 @@ btnConnect.onclick = async () => {
 
       // --- CH340 / SparkFun ---
       case 0x1a86: {
-         w('CONNECT: Detected CH340 (SparkFun). Launchpad-style connect.');
-          // Do not pre-toggle control lines; let esptool-js .main() do its job.
-          const ok = await connectCH340_LaunchpadStyle(port, { baud: OPEN_BAUD });
-          if (!ok) {
-            btnConnect.disabled = false; // allow retry
-            return;
-          }
-          connected = true;
-          btnFlash.disabled = !connected;
-          btnDisconnect.disabled = !connected;
-          break;
+         //w('CONNECT: Detected CH340 (SparkFun). Launchpad-style connect.');
+         // // Do not pre-toggle control lines; let esptool-js .main() do its job.
+         // const ok = await connectCH340_LaunchpadStyle(port, { baud: OPEN_BAUD });
+         // if (!ok) {
+         //   btnConnect.disabled = false; // allow retry
+         //   return;
+         // }
+         // connected = true;
+         // btnFlash.disabled = !connected;
+         // btnDisconnect.disabled = !connected;
+        try {
+            const loaderOptions = {
+                transport,
+                baudrate: parseInt(flashingBaudrateSelect.value),
+                terminal: espLoaderTerminal
+            };
+            esploader = new ESPLoader(loaderOptions);
+            connected = true;
+            chipDesc = await esploader.main();
+            chip = esploader.chip.CHIP_NAME;
+    
+            await esploader.flashId();
+        } catch(e) {
+        }          
+        break;
       }
 
       // --- Anything else ---
