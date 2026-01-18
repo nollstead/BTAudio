@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v28</h1>
+  <h1>BTAudio – Minimal Flash Test v29</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -173,6 +173,7 @@ btnConnect.onclick = async () => {
             //    baudrate: parseInt(flashingBaudrateSelect.value),
             //    terminal: espLoaderTerminal
             //};
+            transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
             esploader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
             w('after new esploader')
             connected = true;
