@@ -3,20 +3,20 @@
   "schema": 1,
   "builds": [
     {
-      "version": "1.0.0",
+      "version": "Sparkfun v0.0.1",
       "date": "2026-01-16",
-      "label": "latest update",
-      "notes": "Sample notes: improved USB audio latency; added stability fixes for pairing.",
+      "label": "Initial Version",
+      "notes": "For SparkFun board, uses RGBLED",
       "chipFamily": "ESP32",
       "parts": [
         { "path": "webflash/BTAudio.bin", "offset": 0 }
       ]
     },
     {
-      "version": "0.0.1",
+      "version": "LyraT v0.0.1",
       "date": "2026-01-15",
-      "label": "LyraT",
-      "notes": "LyraT Test",
+      "label": "LyraT Only",
+      "notes": "For LyraT Testing - Do not use for SparkFun board, no RGBLED",
       "chipFamily": "ESP32",
       "parts": [
         { "path": "webflash/LyraT.bin", "offset": 0 }
