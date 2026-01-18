@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v21</h1>
+  <h1>BTAudio – Minimal Flash Test v22</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -184,7 +184,6 @@ btnConnect.onclick = async () => {
   }
 };
 
-
 // Minimal, single-pass CH340 connect + stub + probe @115200
 // Mapping used here (SparkFun CH340 on Windows, based on your observations):
 //   RTS -> BOOT (GPIO0, active-LOW)   DTR -> EN (reset, active-LOW)
@@ -280,9 +279,6 @@ async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
     return false;
   }
 }
-
-
-
 
     // ---------- Disconnect ----------
 //btnDisconnect.onclick = safeDisconnect;
