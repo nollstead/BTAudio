@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v10</h1>
+  <h1>BTAudio – Minimal Flash Test v11</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -185,35 +185,45 @@ btnConnect.onclick = async () => {
 };
 
     
-// CH340 connect routine: pre-boot (raw setSignals) + esptool-js connect.
-// Returns true on success, false on failure.
+
+// CH340 connect routine (reversed mapping: DTR->EN, RTS->BOOT)
+// Attempt 1 focuses on correct bootloader entry; returns true on success.
 async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
-  // Local helper: CH340 pre-boot using native port.open() + setSignals()
-  async function ch340PreBoot({ bootHoldBefore = 150, enLow = 300, bootHoldAfter = 220, finalSettle = 100 } = {}) {
-    // Ensure native port is closed before we take control
+  async function ch340PreBootReversed({
+    neutralHold = 80,      // after open, force both high (inactive) briefly
+    bootHoldBefore = 150,  // BOOT low settle before touching EN
+    enLow = 300,           // EN low duration (reset width)
+    bootHoldAfter = 220,   // keep BOOT low after EN rises (ride EN RC)
+    finalSettle = 120
+  } = {}) {
+    // Ensure closed, then open native port (CH340 may assert lines at open)
     try { await port.close(); } catch {}
-    w('CH340: pre-boot -> port.open() …');
+    w('CH340: pre-boot (reversed map) -> port.open() …');
     await port.open({ baudRate: baud });
     w('CH340: port.open() OK');
 
-    // ALWAYS include BOTH DTR (BOOT) and RTS (EN) in calls (CH340 quirk)
-    // 1) BOOT=LOW (DTR=true), EN=HIGH (RTS=false)
-    w(`CH340: BOOT=LOW, EN=HIGH  (hold ${bootHoldBefore}ms)`);
-    await port.setSignals({ dataTerminalReady: true,  requestToSend: false });
+    // 0) Neutralize: EN=HIGH (DTR=false), BOOT=HIGH (RTS=false)
+    w(`CH340: Neutral (EN=HIGH, BOOT=HIGH) hold ${neutralHold}ms`);
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    await sleep(neutralHold);
+
+    // 1) BOOT=LOW (RTS=true) — hold IO0 low first
+    w(`CH340: BOOT=LOW (RTS=true), EN=HIGH (DTR=false) hold ${bootHoldBefore}ms`);
+    await port.setSignals({ dataTerminalReady: false, requestToSend: true });
     await sleep(bootHoldBefore);
 
-    // 2) EN=LOW (RTS=true) – assert reset while BOOT is low
-    w(`CH340: EN=LOW (reset)     (hold ${enLow}ms)`);
-    await port.setSignals({ dataTerminalReady: true,  requestToSend: true  });
+    // 2) EN=LOW (DTR=true) — assert reset while BOOT still low
+    w(`CH340: EN=LOW (DTR=true) hold ${enLow}ms`);
+    await port.setSignals({ dataTerminalReady: true, requestToSend: true });
     await sleep(enLow);
 
-    // 3) EN=HIGH (RTS=false) – ROM samples IO0 here (still low)
-    w(`CH340: EN=HIGH (sample BOOT LOW) (hold ${bootHoldAfter}ms)`);
-    await port.setSignals({ dataTerminalReady: true,  requestToSend: false });
+    // 3) EN=HIGH (DTR=false) — ROM samples IO0 here (still low)
+    w(`CH340: EN=HIGH (DTR=false), BOOT still LOW hold ${bootHoldAfter}ms (ROM samples now)`);
+    await port.setSignals({ dataTerminalReady: false, requestToSend: true });
     await sleep(bootHoldAfter);
 
-    // 4) BOOT=HIGH (DTR=false) – release BOOT after EN has risen
-    w(`CH340: BOOT=HIGH (release) (settle ${finalSettle}ms)`);
+    // 4) BOOT=HIGH (RTS=false) — release after EN has cleanly risen
+    w(`CH340: BOOT=HIGH (RTS=false) settle ${finalSettle}ms`);
     await port.setSignals({ dataTerminalReady: false, requestToSend: false });
     await sleep(finalSettle);
 
@@ -222,38 +232,85 @@ async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
     }
   }
 
-  // Attempt 1: pre-boot with standard holds, then esptool-js connect
+  // ---- Attempt 1: reversed mapping + neutralization ----
   try {
-    await ch340PreBoot({ bootHoldBefore: 150, enLow: 300, bootHoldAfter: 220, finalSettle: 100 });
+    await ch340PreBootReversed({
+      neutralHold: 100,
+      bootHoldBefore: 180,
+      enLow: 320,
+      bootHoldAfter: 240,
+      finalSettle: 120
+    });
 
-    // Build fresh transport/loader AFTER pre-boot so esptool-js owns open()
+    // Build fresh transport/loader AFTER prep so esptool-js owns open()
     transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
     loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
 
-    w('CONNECT(CH340): Attempt 1 – ESPLoader.connect() after prep …');
+    w('CONNECT(CH340): Attempt 1 – ESPLoader.connect() after reversed-map prep …');
     await loader.connect();
     w('CONNECT(CH340): SUCCESS (attempt 1)');
     return true;
+
   } catch (e1) {
     w(`CONNECT(CH340): attempt 1 FAILED: ${e1?.message||e1}`);
   }
 
-  // Attempt 2: stronger holds, then esptool-js connect
+  // ---- Attempt 2 (fallback): original (non-reversed) mapping you used before ----
+  // If attempt 1 still doesn’t hold BOOT low at EN↑ on your unit, try the prior sequence.
+  async function ch340PreBootOriginal({
+    neutralHold = 80, bootHoldBefore = 150, enLow = 300, bootHoldAfter = 220, finalSettle = 100
+  } = {}) {
+    try { await port.close(); } catch {}
+    w('CH340: pre-boot (original map) -> port.open() …');
+    await port.open({ baudRate: baud });
+    w('CH340: port.open() OK');
+
+    // Neutral
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    await sleep(neutralHold);
+
+    // DTR=true (BOOT low), EN high
+    await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+    await sleep(bootHoldBefore);
+
+    // EN low
+    await port.setSignals({ dataTerminalReady: true, requestToSend: true });
+    await sleep(enLow);
+
+    // EN high (sample)
+    await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+    await sleep(bootHoldAfter);
+
+    // BOOT high
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    await sleep(finalSettle);
+
+    try { await port.close(); w('CH340: port.close() OK'); } catch {}
+  }
+
   try {
-    await ch340PreBoot({ bootHoldBefore: 220, enLow: 350, bootHoldAfter: 260, finalSettle: 120 });
+    await ch340PreBootOriginal({
+      neutralHold: 100,
+      bootHoldBefore: 180,
+      enLow: 320,
+      bootHoldAfter: 240,
+      finalSettle: 120
+    });
 
     transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
     loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
 
-    w('CONNECT(CH340): Attempt 2 – ESPLoader.connect() after stronger prep …');
+    w('CONNECT(CH340): Attempt 2 – ESPLoader.connect() after original-map prep …');
     await loader.connect();
     w('CONNECT(CH340): SUCCESS (attempt 2)');
     return true;
+
   } catch (e2) {
     w(`CONNECT(CH340): attempt 2 FAILED: ${e2?.message||e2}`);
     return false;
   }
 }
+
 
 
     // ---------- Disconnect ----------
