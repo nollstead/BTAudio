@@ -112,10 +112,10 @@ btnConnect.onclick = async () => {
     connected = true;
     chipDesc = await loader.main();
     w('Chip description: ${chipDesc}');
-    chip = loader.chip.CHIP_NAME;    
+    chip = loader.chip?.CHIP_NAME;    
     w('Chip: ${chip}');
     await loader.flashId();
-    w('after esploader.flashid')          
+    w('after esploader.flashId')          
     btnDisconnect.disabled = !connected;        
   } catch (e) {
     w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
