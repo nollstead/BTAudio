@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v4</h1>
+  <h1>BTAudio – Minimal Flash Test v5</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -56,7 +56,10 @@
     const ERASE_FIRST  = true;     // set to false to skip erase
     const BIN_URL      = 'https://nollstead.github.io/BTAudio/webflash/BTAudio.bin';
     const BIN_ADDRESS  = 0x000000; // merged image at 0x0
-    const FILTERS      = [{ usbVendorId: 0x10c4 }]; // CP210x (LyraT). Add CH340 if needed.
+    const FILTERS = [
+      { usbVendorId: 0x10c4 },                      // CP210x (LyraT)
+      { usbVendorId: 0x1a86, usbProductId: 0x7523 } // CH340C (SparkFun)
+    ];
 
     // ---------- Logging ----------
     const logEl = document.getElementById('log');
