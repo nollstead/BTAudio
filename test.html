@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v6</h1>
+  <h1>BTAudio – Minimal Flash Test v7</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -122,84 +122,93 @@ function u8ToBinaryString(u8) {
 
 
 // ---------- Connect ----------
+
+// ---------- Connect (switch on VendorID) ----------
 btnConnect.onclick = async () => {
   btnConnect.disabled = true;
   try {
     if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
     w(`ENV: UA=${navigator.userAgent}`);
 
-    // Ask user to pick a port; we’ll branch by VID/PID
+    // Let user pick a port (shows both CP210x + CH340 because of your FILTERS)
     port = await navigator.serial.requestPort({ filters: FILTERS });
     const info = port.getInfo?.()||{};
-    const vid  = (info.usbVendorId  || 0) >>> 0;
-    const pid  = (info.usbProductId || 0) >>> 0;
-    w(`CONNECT: Selected port -> VID=0x${vid.toString(16)} PID=0x${pid.toString(16)}`);
+    const vendorId  = info.usbVendorId  || 0;
+    const productId = info.usbProductId || 0;
 
-    // --- Device gating ---
-    if (vid === 0x1a86 && pid === 0x7523) {
-      // CH340 (SparkFun): per your request, just log and bail for now.
-      w('CONNECT: Detected CH340 (SparkFun). Skipping connect here; we will handle CH340 timing separately.');
-      btnConnect.disabled = false;
-      return;
-    }
-    if (vid !== 0x10c4) {
-      w('CONNECT: Non-CP210x bridge detected. For now, only LyraT/CP210x is supported by this test. Aborting connect.');
-      btnConnect.disabled = false;
-      return;
-    }
+    w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
 
-    // CP210x / LyraT path (works for you today)
-    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
-    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+    switch (vendorId) {
+      // --- CP210x / LyraT ---
+      case 0x10c4: {
+        // Proceed with your known-good flow
+        transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+        loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
-    // Stock esptool-js sync (performs DevKitC auto-reset via DTR/RTS)
-    w('CONNECT: Calling ESPLoader.connect() …');
-    await loader.connect();
-    connected = true;
-    w('CONNECT: SUCCESS');
+        w('CONNECT: Calling ESPLoader.connect() …');
+        await loader.connect();
+        connected = true;
+        w('CONNECT: SUCCESS');
 
-    // Upload stub → high baud
-    try {
-      w('STUB: Uploading/running stub …');
-      await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
-      stubReady = true;
-      w('STUB: Stub running.');
-    } catch (e) {
-      w(`STUB: Stub load failed (continuing): ${e?.message || e}`);
-    }
+        // Upload stub → high baud
+        try {
+          w('STUB: Uploading/running stub …');
+          await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
+          stubReady = true;
+          w('STUB: Stub running.');
+        } catch (e) {
+          w(`STUB: Stub load failed (continuing): ${e?.message || e}`);
+        }
 
-    try {
-      w(`BAUD: Changing baudrate to ${FAST_BAUD} …`);
-      await loader.changeBaud(FAST_BAUD);
-      w('BAUD: Changed.');
-    } catch (e) {
-      w(`BAUD: Change failed (continuing at ${OPEN_BAUD}): ${e?.message||e}`);
-    }
+        try {
+          w(`BAUD: Changing baudrate to ${FAST_BAUD} …`);
+          await loader.changeBaud(FAST_BAUD);
+          w('BAUD: Changed.');
+        } catch (e) {
+          w(`BAUD: Change failed (continuing at ${OPEN_BAUD}): ${e?.message||e}`);
+        }
 
-    // Flash ID & size (informational)
-    try {
-      const id = await loader.flashId();
-      if (id) {
-        const man = (id >> 16) & 0xff, dev = id & 0xffff;
-        w(`FLASHID: Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+        // Flash ID & size (informational)
+        try {
+          const id = await loader.flashId();
+          if (id) {
+            const man = (id >> 16) & 0xff, dev = id & 0xffff;
+            w(`FLASHID: Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+          }
+        } catch (e) { w(`FLASHID: Failed: ${e?.message||e}`); }
+        try {
+          if (typeof loader.detectFlashSize === 'function') {
+            const sizeStr = await loader.detectFlashSize();
+            w(`FLASHID: Detected flash size = ${sizeStr}`);
+          }
+        } catch (e) { w(`FLASHID: Size detect failed: ${e?.message||e}`); }
+
+        btnFlash.disabled = !connected;
+        btnDisconnect.disabled = !connected;
+        break;
       }
-    } catch (e) { w(`FLASHID: Failed: ${e?.message||e}`); }
-    try {
-      if (typeof loader.detectFlashSize === 'function') {
-        const sizeStr = await loader.detectFlashSize();
-        w(`FLASHID: Detected flash size = ${sizeStr}`);
+
+      // --- CH340 / SparkFun (defer handling for now) ---
+      case 0x1a86: {
+        w('CONNECT: Detected CH340 (SparkFun). Skipping connect for now; we will add CH340-specific timing later.');
+        btnConnect.disabled = false; // allow user to try again or disconnect
+        return;
       }
-    } catch (e) { w(`FLASHID: Size detect failed: ${e?.message||e}`); }
 
-    btnFlash.disabled = !connected;
-    btnDisconnect.disabled = !connected;
-
+      // --- Anything else ---
+      default: {
+        w('CONNECT: Unsupported USB bridge for this test page. For now, only CP210x is enabled.');
+        btnConnect.disabled = false;
+        return;
+      }
+    }
   } catch (e) {
     w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
     try { await port?.close?.(); } catch {}
     btnConnect.disabled = false;
   }
 };
+
     /*
     btnConnect.onclick = async () => {
       btnConnect.disabled = true;
