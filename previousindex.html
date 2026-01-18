@@ -3,75 +3,65 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nollstead Studio BTAudio – Firmware Uploader</title>
-
-  <!-- We use the single-file bundle for simplicity -->
-  <script>
-    // Ensure this page is served over HTTPS/GitHub Pages. Web Serial requires secure context.
-    // Chrome/Edge only (experimental API). See: https://developer.chrome.com/docs/capabilities/serial
-  </script>
-
+  <title>BTAudio Firmware Update</title>
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
     *{box-sizing:border-box}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text);line-height:1.6}
     h1{margin:0 0 8px}.muted{color:var(--muted)}
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
-    .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
-    .instructions {
-      background: #1e1e1e;
-      border-radius: 14px;
-      padding: 25px;
-      margin-top: 35px;
-      text-align: left;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.35);
-    }
-        .instructions h3 {
-      margin-top: 0;
-      font-size: 1.3rem;
-      color: #fff;
-    }
-
-    .instructions ol {
-      padding-left: 22px;
-      color: #ddd;
-    }
-
-    .instructions li {
-      margin: 10px 0;
-      font-size: 1rem;
-    }
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;align-items:center}
+    .fw-label-row {flex-basis: 100%; margin-bottom: 6px;}
+    .instructions{background:#1e1e1e;border-radius:14px;padding:18px;margin-top:10px}
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
     button[disabled]{opacity:.55;cursor:not-allowed}
     button:hover:not([disabled]){background:var(--accent2)}
-    textarea{width:100%;height:240px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
+    textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
+    label{color:var(--muted)}
+
+    /* Version picker styles */
+    .fw-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+    .fw-item{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border);border-radius:10px;background:#141414}
+    .fw-item input[type="radio"]{accent-color:#4CAF50;transform:scale(1.15);margin-top:2px}
+    .fw-meta{display:flex;flex-direction:column;gap:2px}
+    .fw-line{display:flex;gap:8px;flex-wrap:wrap}
+    .fw-version{font-weight:700;color:#eaeaea}
+    .fw-date{color:#ccc}
+    .fw-label{color:#a6d5a6}
+    .fw-notes{color:#bbb;font-size:0.95em}
   </style>
 </head>
 <body>
-  <h1>BTAudio Firmware Uploader v38</h1>
-  <p class="muted">Version 0.0.2</p>
+  <h1>BTAudio Firmware Update</h1>
+  <p class="muted">V=7</p>
 
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>Connect</button>
       <button id="flashBtn"   disabled>Upload</button>
-      <button id="resetBtn"   disabled>Reset</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
-  <div class="instructions">
-    <h3>Instructions</h3>
-    <ol>
-      <li>Connect your BTAudio device to your computer via USB.</li>
-      <li>Click <strong>Connect</strong> above and when prompted select the serial port (e.g., “USB‑SERIAL CH340”).</li>
-      <li>Click <strong>Upload</strong> and wait for completion.</li>
-      <li>Your device should restart automatically once the upload is complete</li>
-    </ol>
 
-    <p class="note">
-      Note: If your device doesn’t auto‑enter flash mode, press and hold the BOOT button while connecting, 
-      or when prompted during flashing.
-    </p>
+<!-- Version picker (manifest-driven) -->
+<div class="row" style="align-items:flex-start">
+  <div class="fw-label-row">
+    <label>Firmware Version</label>
   </div>
+
+  <div id="fwList" class="fw-list">
+    <div class="fw-item"><em class="muted">Loading versions…</em></div>
+  </div>
+</div>
+
+    <div class="instructions">
+      <h3>Instructions</h3>
+      <ol>
+        <li>Connect your BTAudio device to your computer via USB.</li>
+        <li>Click <strong>Connect</strong> above and when prompted select the serial port (e.g., “USB‑SERIAL”).</li>
+        <li>Click <strong>Upload</strong> and wait for completion.</li>
+        <li>Your device will restart automatically once the upload is complete</li>
+      </ol>
+    </div>
   </div>
 
   <div class="panel">
@@ -79,378 +69,388 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-  <!-- Script: hardened connect/disconnect for CH340 + esptool-js -->
 
 <script type="module">
-  import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+  /********************************************************************
+   * BTAudio Firmware Update – v6 (LyraT/CP2102N + SparkFun/CH340 test)
+   * Stock esptool-js flow with explicit control-line handling and
+   * DETAILED DIAGNOSTIC LOGGING at each step.
+   ********************************************************************/
 
+  import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
   const { ESPLoader, Transport } = esptool;
 
-  const logEl        = document.getElementById('log');
-  const connectBtn   = document.getElementById('connectBtn');
-  const flashBtn     = document.getElementById('flashBtn');
-  const resetBtn     = document.getElementById('resetBtn');
-  const disconnectBtn= document.getElementById('disconnectBtn');
+  // ---------- Logging ----------
+  const logEl = document.getElementById('log');
+  function ts() { return new Date().toLocaleTimeString(); }
+  function w(s){ logEl.value += `[${ts()}] ${s}\n`; logEl.scrollTop = logEl.scrollHeight; }
+  const term = { clean(){}, writeLine(s){ if(s) w(`ESPLoader: ${s}`); }, write(s){ if(s) w(`ESPLoader: ${s}`); } };
 
-  let port = null;
-  let loader = null;
-  let transport = null;
-  let connecting = false;  // guard against double-click races
-  let lastDisconnectAt = Date.now() - (60 * 60 * 1000); // 1 hour ago: ensures no wait on first connect
-  const RECONNECT_DELAY_MS = 5000;                      // tune down later once stable
-  const BAUD = 115200;
+  // ---------- DOM ----------
+  const connectBtn = document.getElementById('connectBtn');
+  const flashBtn   = document.getElementById('flashBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const fwList     = document.getElementById('fwList');
 
-  const log = (m, e=false) => {
-    const ts = new Date().toLocaleTimeString();
-    logEl.value += `[${ts}] ${m}\n`;
-    logEl.scrollTop = logEl.scrollHeight;
-    (e ? console.error : console.log)(m);
-  };
+  // ---------- State & constants ----------
+  let port=null, transport=null, loader=null, connected=false, stubReady=false;
+  const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
+  const FAST_BAUD = 921600;
+  const FILTERS = [
+    { usbVendorId: 0x10c4 },                      // CP210x (LyraT)
+    { usbVendorId: 0x1a86, usbProductId: 0x7523 } // CH340C (SparkFun)
+  ];
+  const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+  let __connecting = false; // re-entrancy guard
 
-  const espTerminal = {
-    clean(){ logEl.value = ""; },
-    writeLine(s){ log(s); },
-    write(s){ log(s); }
-  };
+  // ---------- Manifest-driven picker ----------
+  let manifest=null, selectedBuild=null;
 
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-  // Some Windows usbser.sys + CH340 stacks need a double-set of control lines.
-  async function setSignalsTwice(dtr, rts) {
-    await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }).catch(()=>{});
-    await port.setSignals({ dataTerminalReady: dtr, requestToSend: rts }).catch(()=>{});
+  function parseSemver(v) {
+    const m = String(v||'').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
+    return m ? {maj:+m[1], min:+m[2], pat:+m[3]} : {maj:0, min:0, pat:0};
+  }
+  function compareSemverDesc(a, b) {
+    const aa = parseSemver(a), bb = parseSemver(b);
+    if (aa.maj !== bb.maj) return bb.maj - aa.maj;
+    if (aa.min !== bb.min) return bb.min - aa.min;
+    return bb.pat - aa.pat;
   }
 
+  function renderFwList(builds){
+    fwList.innerHTML = '';
+    builds.forEach((b, idx) => {
+      const id = `fw_${idx}`;
+      const item = document.createElement('div');
+      item.className = 'fw-item';
 
-async function enterBootloaderSparkfun() {
-  if (!port) return;
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'fwPick';
+      radio.id = id;
+      radio.value = b.version || '';
+      radio.checked = (selectedBuild && selectedBuild.version === b.version) || (!selectedBuild && idx===0);
+      radio.addEventListener('change', () => { selectedBuild = b; w(`UI: Selected build ${b.version} (${b.date||'no date'})`); });
 
-  // Must open the port to drive control lines
-  await port.open({ baudRate: BAUD }).catch(()=>{});
+      const meta = document.createElement('div');
+      meta.className = 'fw-meta';
 
-  try {
-    // Ensure RTS HIGH (requestToSend=false) per SparkFun note
-    await port.setSignals({ requestToSend: false });
+      const topLine = document.createElement('div');
+      topLine.className = 'fw-line';
+      const vSpan = document.createElement('span'); vSpan.className = 'fw-version'; vSpan.textContent = b.version || 'v?';
+      topLine.appendChild(vSpan);
+      if (b.date){
+        const dSpan = document.createElement('span'); dSpan.className='fw-date'; dSpan.textContent = b.date;
+        topLine.appendChild(dSpan);
+      }
+      if (b.label){
+        const lSpan = document.createElement('span'); lSpan.className='fw-label'; lSpan.textContent = b.label;
+        topLine.appendChild(lSpan);
+      }
+
+      meta.appendChild(topLine);
+
+      if (b.notes){
+        const n = document.createElement('div'); n.className='fw-notes'; n.textContent = b.notes;
+        meta.appendChild(n);
+      }
+
+      item.appendChild(radio);
+      item.appendChild(meta);
+      fwList.appendChild(item);
+
+      if (!selectedBuild && radio.checked) selectedBuild = b;
+    });
+  }
+
+  async function loadManifest() {
+    w('Manifest: fetching webflash/manifest.json …');
+    const resp = await fetch('https://nollstead.github.io/BTAudio/webflash/manifest.json', { cache: 'no-cache' });
+    w(`Manifest: HTTP status ${resp.status}`);
+    if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!Array.isArray(data.builds)) throw new Error('manifest: builds missing');
+    data.builds.sort((a,b) => {
+      const sv = compareSemverDesc(a.version||'0.0.0', b.version||'0.0.0');
+      if (sv !== 0) return sv;
+      return String(b.date||'').localeCompare(String(a.date||''));
+    });
+    manifest = data;
+    selectedBuild = null;
+    renderFwList(data.builds);
+    w(`Manifest: loaded ${data.builds.length} build(s); newest = ${data.builds[0]?.version||'n/a'}`);
+  }
+
+  loadManifest().catch(e => {
+    fwList.innerHTML = '';
+    const fallback = {
+      version: 'current',
+      chipFamily: 'ESP32',
+      parts: [{ path: 'webflash/BTAudio.bin', offset: 0 }]
+    };
+    selectedBuild = fallback;
+    const div = document.createElement('div');
+    div.className='fw-item';
+    div.innerHTML = `<input type="radio" name="fwPick" checked style="margin-top:2px">
+                     <div class="fw-meta">
+                       <div class="fw-line">
+                         <span class="fw-version">current</span>
+                         <span class="fw-date">manifest unavailable</span>
+                       </div>
+                       <div class="fw-notes">Using default BTAudio.bin</div>
+                     </div>`;
+    fwList.appendChild(div);
+    w(`Manifest: load failed (${e?.message||e}). Using fallback image.`);
+  });
+
+  // ---------- Control-line helpers with diagnostics ----------
+  async function setLine(name, value) {
+    try {
+      if (name === 'DTR') { await transport.setDTR(value); w(`CTRL: setDTR(${value}) OK`); }
+      else if (name === 'RTS') { await transport.setRTS(value); w(`CTRL: setRTS(${value}) OK`); }
+    } catch (e) {
+      w(`CTRL: set${name}(${value}) FAILED: ${e?.message||e}`);
+    }
+  }
+
+  // Put the chip in ROM bootloader before connect() – REQUIRES PORT OPEN
+  async function forceIntoBootloader(transport) {
+    w('BOOTFLOW: Forcing ROM loader (GPIO0 low at EN rising) …');
+    await setLine('DTR', false); // neutral
+    await setLine('RTS', false); // neutral
     await sleep(20);
 
-    // DTR LOW -> HIGH transition to enter bootloader
-    await port.setSignals({ dataTerminalReady: true  });  // DTR LOW
-    await sleep(120);
-    await port.setSignals({ dataTerminalReady: false });  // DTR HIGH (release)
+    // 1) Assert BOOT (GPIO0 low): DTR=true
+    await setLine('DTR', true);
+    await sleep(20);
+
+    // 2) Pulse EN low->high (active-low): RTS=true (EN low) then false (EN high)
+    await setLine('RTS', true);
+    await sleep(100); // broaden to 100ms for robustness
+    await setLine('RTS', false);
+    w('BOOTFLOW: EN rising occurred while GPIO0 was LOW → device should be in ROM loader');
+
+    // 3) After entering ROM, release BOOT so next reset can run app
     await sleep(80);
+    await setLine('DTR', false);
+    await sleep(40);
 
-    // Leave RTS HIGH; don't hold either line asserted
-  } finally {
-    try { await port.close(); } catch {}
+    w('BOOTFLOW: Completed forceIntoBootloader sequence');
   }
-  await sleep(200); // CH340C settle time
-}
 
-  // Enter the ROM bootloader (DTR->GPIO0, RTS->EN). Used only as a recovery attempt.
+  // Run app after flashing: GPIO0 high + EN pulse – REQUIRES PORT OPEN
+  async function hardResetToApp(transport) {
+    w('RUNFLOW: Forcing run-app (GPIO0 HIGH at EN rising) …');
+    // Make sure BOOT is released (GPIO0 high)
+    await setLine('DTR', false);
 
-async function enterBootloaderOnce() {
-  if (!port) return;
-
-  // Web Serial requires the port to be OPEN to call setSignals()
-  await port.open({ baudRate: BAUD }).catch(()=>{});
-
-  try {
-    // Correct mapping for typical ESP32 auto-program circuit:
-    //   DTR -> EN (RESET), inverted
-    //   RTS -> GPIO0 (BOOT), inverted
-
-    // Step 1: Hold GPIO0 LOW (boot mode) and RESET LOW
-    await setSignalsTwice(true,  true);   // DTR=true  -> EN LOW   (reset asserted)
-                                          // RTS=true  -> GPIO0 LOW (boot mode)
-    await sleep(100);
-
-    // Step 2: Release RESET while keeping GPIO0 LOW (device boots into bootloader)
-    await setSignalsTwice(false, true);   // DTR=false -> EN HIGH  (reset released)
-                                          // RTS=true  -> GPIO0 LOW (still boot mode)
+    // Pulse EN low (active-low) then high
+    await setLine('RTS', true);   // EN low (reset)
     await sleep(120);
+    await setLine('RTS', false);  // EN high -> app runs
+    await sleep(150);
 
-    // Step 3: Finally release GPIO0
-    await setSignalsTwice(false, false);  // DTR=false -> EN HIGH
-                                          // RTS=false -> GPIO0 HIGH
-    await sleep(60);
-  } finally {
-    try { await port.close(); } catch {}
+    // Leave both lines de-asserted (idle)
+    await setLine('DTR', false);
+    await setLine('RTS', false);
+    w('RUNFLOW: Completed hardResetToApp sequence');
   }
 
-  // Small settle for CH340/CH341
-  await sleep(200);
-}
-
-
-  // Close any previously granted ports (same origin) that might still be open.
-  async function closeAllGrantedPorts() {
+  // ---------- Disconnect helper ----------
+  async function disconnectClean(){
+    w('DISCONNECT: Begin cleanup …');
     try {
-      const granted = await navigator.serial.getPorts();
-      for (const p of granted) {
-        try { await p.close(); } catch {}
-      }
-    } catch {}
-  }
-
-  async function disconnectClean() {
-    try {
-      // Ask esptool-js transport to unlock streams first
-      try { await transport?.disconnect?.(); } catch {}
-      try { await loader?.flashFinish?.(false); } catch {}
+      try{ await transport?.disconnect?.(); w('DISCONNECT: transport.disconnect() OK'); }catch(e){ w(`DISCONNECT: transport.disconnect() err: ${e?.message||e}`); }
+      try{ await loader?.flashFinish?.(false); w('DISCONNECT: loader.flashFinish(false) OK'); }catch(e){ w(`DISCONNECT: flashFinish(false) err: ${e?.message||e}`); }
+      await setLine('DTR', false);
+      await setLine('RTS', false);
     } finally {
-      // Deassert control lines so the board doesn't stay half-reset on close
-      try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
-      try { await port?.close(); } catch {}
-      try { await port?.forget?.(); } catch {}
-      try { await closeAllGrantedPorts(); } catch {}
-      await sleep(150);
-      loader = null; transport = null; port = null;
-
-      connectBtn.disabled = false;
-      flashBtn.disabled = true;
-      resetBtn.disabled = true;
-      disconnectBtn.disabled = true;
-
-      log("Disconnected and port closed.");
-      await sleep(200);  // small settle so next connect starts clean on CH340
-      connectBtn.focus();
-
-      // Mark when we disconnected to enforce debounce on the next connect
-      lastDisconnectAt = Date.now();
+      try { await port?.close?.(); w('DISCONNECT: port.close() OK'); } catch(e){ w(`DISCONNECT: port.close() err: ${e?.message||e}`); }
+      port=transport=loader=null; connected=false; stubReady=false;
+      connectBtn.disabled=false; flashBtn.disabled=true; disconnectBtn.disabled=true;
+      w('DISCONNECT: Completed; UI reset.');
     }
   }
   disconnectBtn.onclick = disconnectClean;
 
-  // RTS/DTR reset to boot flashed app (GPIO0 high, EN pulse)
-
-
-async function hardResetToApp(){
-  if (!port) return;
-
-  await port.open({ baudRate: BAUD }).catch(()=>{});
-  try {
-    // DTR LOW per SparkFun note (hold during the RTS edge)
-    await port.setSignals({ dataTerminalReady: true  });  // DTR LOW
-    await port.setSignals({ requestToSend: false });      // RTS HIGH (ensure starting high)
-    await sleep(40);
-
-    // RTS HIGH -> LOW edge triggers normal boot reset
-    await port.setSignals({ requestToSend: true  });      // RTS LOW (assert)
-    await sleep(120);
-
-    // Release signals
-    await port.setSignals({ requestToSend: false });      // RTS back HIGH
-    await port.setSignals({ dataTerminalReady: false });  // DTR back HIGH
-    log("Issued SparkFun reset for normal run mode.");
-  } catch(e) {
-    log(`Reset sequence failed: ${e?.message || e}`, true);
-  } finally {
-    try { await port.close(); } catch {}
-  }
-  await sleep(200);
-}
-
-
-  // Auto-clean if the cable is pulled
-  navigator.serial?.addEventListener?.('disconnect', async (e) => {
-    if (port && e.target === port) {
-      log('Device disconnected.');
-      await disconnectClean();
-    }
-  });
-
-  // === Hardened connect flow ===
+  // ---------- Connect (OPEN PORT -> force bootloader -> stock connect) ----------
   connectBtn.onclick = async () => {
-    if (connecting) return;
-    connecting = true;
+    if (__connecting) { w('CONNECT: Already connecting; ignoring click.'); return; }
+    __connecting = true;
     connectBtn.disabled = true;
 
     try {
-      // Debounce: if we recently disconnected, wait the remainder to reach RECONNECT_DELAY_MS
-      const since = Date.now() - lastDisconnectAt;
-      if (since > 0 && since < RECONNECT_DELAY_MS) {
-        await sleep(RECONNECT_DELAY_MS - since);
-      }
+      if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
 
-      if (!('serial' in navigator)) {
-        throw new Error("WebSerial not available. Use Chrome/Edge over HTTPS.");
-      }
+      w(`ENV: UA=${navigator.userAgent}`);
+      port = await navigator.serial.requestPort({ filters: FILTERS });
+      const info = port.getInfo?.()||{};
+      w(`CONNECT: Port chosen -> VID=0x${(info.usbVendorId||0).toString(16)} PID=0x${(info.usbProductId||0).toString(16)}`);
 
-      // Close lingering same-origin ports (helps if another tab left it open)
-      await closeAllGrantedPorts();
-      await sleep(100);
-
-      // Prefer CH340 (CH34x) by VID/PID; fall back to generic selection if not found
-      const filters = [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }]; // CH340 on your board
+      // IMPORTANT: open the port BEFORE using setSignals(DTR/RTS)
       try {
-        port = await navigator.serial.requestPort({ filters });
+        await port.open({ baudRate: OPEN_BAUD });
+        w(`CONNECT: port.open({ baudRate: ${OPEN_BAUD} }) OK`);
       } catch (e) {
-        if (String(e?.name) === 'NotFoundError') {
-          port = await navigator.serial.requestPort({});
-        } else {
-          throw e;
-        }
+        w(`CONNECT: port.open() FAILED: ${e?.message||e}`);
+        throw e;
       }
 
+      transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+      loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
-log('Port selected.');
+      // Ensure neutral lines, then force ROM loader (equivalent to BOOT+EN by hand)
+      await setLine('DTR', false);
+      await setLine('RTS', false);
+      await sleep(20);
+      await forceIntoBootloader(transport);
 
-// Make sure port is closed before the sequence
-try { await port.close(); } catch {}
-await sleep(120);
+      // Stock esptool-js sync (can take several seconds)
+      w('CONNECT: Calling ESPLoader.connect() …');
+      await loader.connect();
+      connected = true;
+      w('CONNECT: ESPLoader.connect() -> SUCCESS');
 
-// ---- SparkFun bootloader entry ----
-await enterBootloaderSparkfun();
-// -----------------------------------
-
-/* now proceed to create Transport/ESPLoader and call loader.connect() */
-transport = new Transport(port, false, false);
-loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
-
-/* (your existing guard to ensure port closed) */
-if (port.readable || port.writable) {
-  try { await transport?.disconnect?.(); } catch {}
-  try { await port.close(); } catch {}
-  await sleep(150);
-}
-
-await loader.connect(); // should now sync reliably
-
-
-      } catch (firstErr) {
-        // Recovery: forced cleanup + 1200-bps nudge + bootloader entry (once), then reconnect
-        log(`First connect failed: ${firstErr?.message || firstErr}`, true);
-
-        // 1) Force unlock/close anything the browser still thinks is open
-        try { await transport?.disconnect?.(); } catch {}
-        try { await port?.close(); } catch {}
-        await sleep(150);
-
-        // 2) CH340 nudge: open/close at 1200 bps to clear stale driver state
-        try {
-          await port.open({ baudRate: 1200 });
-          await sleep(100);
-          await port.close();
-          await sleep(150);
-        } catch {}
-
-        // 3) Try the bootloader entry once (safe if already in bootloader)
-        await enterBootloaderOnce();
-
-        // 4) Rebuild transport/loader for a clean state
-        transport = new Transport(port, /* tracing */ false, /* enableSlipReader */ false);
-        loader    = new ESPLoader({ transport, baudrate: BAUD, terminal: espTerminal });
-
-        // 5) Make sure nothing is still open before esptool-js opens it
-        if (port.readable || port.writable) {
-          try { await transport?.disconnect?.(); } catch {}
-          try { await port.close(); } catch {}
-          await sleep(150);
-        }
-
-        await loader.connect();
+      // Upload stub → run at higher baud
+      try {
+        w('STUB: Uploading/running stub …');
+        await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
+        stubReady = true;
+        w('STUB: Stub running.');
+      } catch (e) {
+        w(`STUB: Stub load failed (continuing): ${e?.message || e}`);
       }
 
-      // Connected
-      const chip = await loader.chip;
-      log('Connected');
-      flashBtn.disabled = false;
-      resetBtn.disabled = false;
-      disconnectBtn.disabled = false;
+      // Change baud to 921600
+      try {
+        w(`BAUD: Changing baudrate to ${FAST_BAUD} …`);
+        await loader.changeBaud(FAST_BAUD);
+        w('BAUD: Changed.');
+      } catch (e) {
+        w(`BAUD: Change failed (continuing at ${OPEN_BAUD}): ${e?.message||e}`);
+      }
+
+      // Flash ID & size
+      try {
+        const id = await loader.flashId();
+        if (id) {
+          const man = (id >> 16) & 0xff, dev = id & 0xffff;
+          w(`FLASHID: Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+        }
+      } catch (e) { w(`FLASHID: Failed: ${e?.message||e}`); }
+      try {
+        if (typeof loader.detectFlashSize === 'function') {
+          const sizeStr = await loader.detectFlashSize();
+          w(`FLASHID: Detected flash size = ${sizeStr}`);
+        }
+      } catch (e) { w(`FLASHID: Size detect failed: ${e?.message||e}`); }
+
+      flashBtn.disabled = !connected; disconnectBtn.disabled = !connected;
 
     } catch (e) {
-      log(`Connect failed: ${e?.name ? e.name+': ' : ''}${e?.message || e}`, true);
-
-      // Unwind state so the next attempt starts clean
+      w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
       try { await transport?.disconnect?.(); } catch {}
-      try { await port?.setSignals?.({ dataTerminalReady: false, requestToSend: false }); } catch {}
-      try { await port?.close(); } catch {}
-      await sleep(150);
-      try { await closeAllGrantedPorts(); } catch {}
-
-      // Reset UI (avoid "all grey" state after quick-fail)
-      flashBtn.disabled = true;
-      resetBtn.disabled = true;
-      disconnectBtn.disabled = true;
+      try { await port?.close?.(); } catch {}
       connectBtn.disabled = false;
     } finally {
-      connecting = false;
+      __connecting = false;
     }
   };
 
-  // === Flash flow (unchanged except for minor guardrails) ===
+  // ---------- Binary-string conversion for broad bundle compatibility ----------
+  function u8ToBinaryString(u8) {
+    let b = '';
+    const CHUNK = 1 << 15; // 32 KB
+    for (let i = 0; i < u8.length; i += CHUNK) {
+      b += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+    }
+    return b;
+  }
+
+  // ---------- FLASH (single or multi) from manifest ----------
   flashBtn.onclick = async () => {
     flashBtn.disabled = true;
     try {
-      const resp = await fetch("webflash/UTAudio.bin", { cache: "no-cache" });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const buf = new Uint8Array(await resp.arrayBuffer());
-      log(`Image size: ${buf.length} bytes`);
+      if (!selectedBuild || !Array.isArray(selectedBuild.parts) || selectedBuild.parts.length === 0) {
+        throw new Error('No firmware selected.');
+      }
+      w(`FLASH: Preparing to write ${selectedBuild.parts.length} file(s) for version ${selectedBuild.version||'n/a'} …`);
 
-      // Load stub if needed (faster, more reliable erase/write)
-      try {
-        if (!loader.IS_STUB) {
-          log("Running stub…");
-          await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
-          log("Stub ready.");
-        } else {
-          log("Stub already running — skipping stub load.");
-        }
-      } catch (e) {
-        const msg = String(e?.message || e);
-        if (/software loader is resident|overlapping address range/i.test(msg)) {
-          log("Stub already resident — continuing without reloading.");
-        } else {
-          log("Stub failed (continuing with ROM bootloader): " + msg, true);
-        }
+      // Fetch all parts
+      const fileArray = [];
+      for (const p of selectedBuild.parts) {
+        let addr = Number(p.offset);
+        if (!Number.isFinite(addr)) addr = parseInt(String(p.offset), 0);
+        if (!Number.isFinite(addr)) throw new Error(`Invalid offset: ${p.offset}`);
+
+        const url = p.path.startsWith('http') ? p.path : p.path;
+        w(`FLASH: Fetching ${url} @ 0x${addr.toString(16)} …`);
+        const resp = await fetch(`${url}?v=${encodeURIComponent(selectedBuild.version||'')}`, { cache: 'no-cache' });
+        w(`FLASH: HTTP status ${resp.status} for ${url}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+        const u8 = new Uint8Array(await resp.arrayBuffer());
+        w(`FLASH: Downloaded ${u8.length} bytes from ${url}`);
+
+        // Use binary-string for broad compatibility with browser bundles
+        fileArray.push({ address: addr, data: u8ToBinaryString(u8) });
       }
 
-      // Full erase for safety (you can comment this out for faster updates)
+      // Ensure stub (usually already running)
+      if (!stubReady) {
+        w('STUB: Uploading stub (pre-flash) …');
+        try {
+          await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
+          w('STUB: Stub running.');
+          stubReady = true;
+        } catch (e) { w(`STUB: Stub load failed (continuing): ${e?.message||e}`); }
+      }
+
+      w('FLASH: Erasing flash (may take a while) …');
       await loader.eraseFlash();
+      w('FLASH: Erase complete.');
 
-      // Convert Uint8Array -> binary string for esptool-js@0.5.7 browser bundle
-      let bstr = '';
-      for (let i = 0; i < buf.length; i++) bstr += String.fromCharCode(buf[i]);
-
+      w('FLASH: Writing images …');
       await loader.writeFlash({
-        fileArray: [{ address: 0x000000, data: bstr }],
-        flashSize: '16MB',     // Adjust to your target if needed
+        fileArray,
+        flashSize: 'keep',
         flashMode: 'keep',
         flashFreq: 'keep',
         compress: true,
-        reportProgress: (fileIndex, written, total) => {
-          if (total > 0) log(`Writing… ${Math.round((written/total)*100)}%`);
+        reportProgress: (idx, written, total) => {
+          if (total>0) w(`FLASH: File ${idx+1}/${fileArray.length} – ${Math.round((written/total)*100)}%`);
         }
       });
+      w('FLASH: Write complete.');
 
-      log("Flash complete. Wrapping up…");
-      await hardResetToApp();
-      log("Done.");
+      w('FINALIZE: flashFinish(true) to reboot …');
+      try { await loader.flashFinish(true); w('FINALIZE: flashFinish(true) OK'); } catch(e){ w(`FINALIZE: flashFinish(true) err: ${e?.message||e}`); }
+      await sleep(150);
 
-      // Auto-disconnect so next run starts clean
+      // We still own the port; explicitly force run-app via EN pulse
+      w('FINALIZE: Forcing run-app via EN pulse …');
+      try { await hardResetToApp(transport); } catch(e){ w(`FINALIZE: hardResetToApp err: ${e?.message||e}`); }
+      await sleep(120);
+
+      w('DONE: Flash complete. Device rebooted.');
       await disconnectClean();
 
     } catch (e) {
-      log(`Flash failed: ${e?.message || e}`, true);
-      // Keep session alive to allow retry
-      flashBtn.disabled = false;
+      w(`FLASH: FAILED: ${e?.message || e}`);
+      flashBtn.disabled=false;
     }
   };
 
-  resetBtn.onclick = async () => {
-    await hardResetToApp();
-  };
-
-  // Release the port on tab close/reload so a fresh load doesn't inherit a locked handle
-  window.addEventListener('unload', () => {
-    // Fire and forget; the browser may ignore async but it still helps
-    try { transport?.disconnect?.(); } catch {}
-    try { port?.close(); } catch {}
+  // ---------- On unload: best effort close ----------
+  window.addEventListener('unload',()=>{
+    try{ transport?.disconnect?.(); }catch{}
+    try{ port?.close?.(); }catch{}
   });
 
-  // Initial enablement
-  log("Installer script loaded.");
+  // Enable Connect when ESPLoader is present
   connectBtn.disabled = !(Transport && ESPLoader);
+  w('READY: Page initialized. Click Connect to begin.');
 </script>
+
+
 </body>
 </html>
