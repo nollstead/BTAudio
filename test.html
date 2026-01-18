@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v36</h1>
+  <h1>BTAudio – Minimal Flash Test v37</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -111,9 +111,9 @@ btnConnect.onclick = async () => {
     w('loader loaded')
     connected = true;
     chipDesc = await loader.main();
-    w('Chip description: ${chipDesc}');
+    w(`Chip description: ${chipDesc}`);
     chip = loader.chip?.CHIP_NAME;    
-    w('Chip: ${chip}');
+    w(`Chip: ${chip}`);
     await loader.flashId();
     w('after esploader.flashId')          
     btnDisconnect.disabled = !connected;        
