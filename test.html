@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v34</h1>
+  <h1>BTAudio – Minimal Flash Test v35</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -125,8 +125,8 @@ btnConnect.onclick = async () => {
 };
 
     // ---------- Disconnect ----------
-//btnDisconnect.onclick = safeDisconnect;
-btnDisconnect.onclick = async () => {
+/*
+    btnDisconnect.onclick = async () => {
   w('DISCONNECT: Begin cleanup …');
 
   // 1) Best‑effort esptool transport disconnect (this closes the port internally)
@@ -163,7 +163,85 @@ btnDisconnect.onclick = async () => {
 
   w('DISCONNECT: Completed.');
 }
+*/
 
+    
+// ---------- Disconnect (reboot to app via DTR pulse) ----------
+btnDisconnect.onclick = async () => {
+  w('DISCONNECT: Begin (reboot to app via EN pulse) …');
+
+  // Small helper here scoped to this handler so we don't add global helpers
+  const nap = (ms) => new Promise(r => setTimeout(r, ms));
+
+  try {
+    // CASE A: Transport exists (port is open and owned by esptool-js)
+    if (transport) {
+      w('DISCONNECT: Using transport path (port is open).');
+
+      // 1) Ensure BOOT released (RTS=false => GPIO0 HIGH)
+      try { await transport.setRTS(false); w('DISCONNECT: RTS=false (BOOT HIGH)'); } catch {}
+
+      // 2) EN pulse (DTR=true → LOW, then false → HIGH)
+      try {
+        w('DISCONNECT: DTR=true (EN LOW/reset) …');
+        await transport.setDTR(true);
+        await nap(120); // short reset width (100–200 ms is plenty)
+
+        w('DISCONNECT: DTR=false (EN HIGH/run app) …');
+        await transport.setDTR(false);
+        await nap(120); // small settle
+      } catch (e) {
+        w(`DISCONNECT: EN pulse via transport failed: ${e?.message || e}`);
+      }
+
+      // 3) Disconnect the transport (closes the Web Serial port cleanly)
+      try {
+        await transport.disconnect();
+        w('DISCONNECT: transport.disconnect() OK');
+      } catch (e) {
+        w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
+      }
+    }
+
+    // CASE B: No transport (or transport already disconnected) – do a quick native pulse
+    else {
+      w('DISCONNECT: Using native path (temporary port.open()).');
+
+      // Defensive: ensure closed; then open
+      try { await port?.close?.(); } catch {}
+      await port.open({ baudRate: OPEN_BAUD });
+      w('DISCONNECT: port.open() OK');
+
+      // Always set BOTH fields on CH340/CP210x to avoid ignored updates
+      // 1) BOOT HIGH (RTS=false)
+      await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+      w('DISCONNECT: setSignals(DTR=false, RTS=false)');
+
+      // 2) EN LOW (DTR=true), pulse
+      await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+      w('DISCONNECT: setSignals(DTR=true , RTS=false) (EN LOW)');
+      await nap(120);
+
+      // 3) EN HIGH (DTR=false) → run app
+      await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+      w('DISCONNECT: setSignals(DTR=false, RTS=false) (EN HIGH)');
+      await nap(120);
+
+      // Close native port
+      await port.close();
+      w('DISCONNECT: port.close() OK');
+    }
+  } catch (e) {
+    w(`DISCONNECT: Error: ${e?.message || e}`);
+  } finally {
+    // Reset local state/UI for your minimal test page
+    port = transport = loader = null;
+    connected = false;
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+    w('DISCONNECT: Completed.');
+  }
+};
 
     // ---------- On unload ----------
     window.addEventListener('unload',()=>{
