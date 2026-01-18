@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v19</h1>
+  <h1>BTAudio – Minimal Flash Test v20</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -185,26 +185,26 @@ btnConnect.onclick = async () => {
 };
 
 
-// CH340 connect that mimics "click twice": do the same pre-boot+connect N times.
+// CH340 connect that replicates "two clicks": (pre-boot -> connect) repeated with longer settles.
 // Mapping (SparkFun CH340 on Windows): RTS -> BOOT (GPIO0, active-LOW), DTR -> EN (reset, active-LOW)
 async function connectCH340(
   port,
   {
-    baud            = OPEN_BAUD,
-    cycles          = 3,     // try 2–3; your logs show #2 often succeeds
-    neutral         = 100,   // ms
-    bootHoldBefore  = 220,   // ms BOOT low before touching EN
-    enLow           = 350,   // ms EN low (reset width)
-    bootHoldAfter   = 280,   // ms keep BOOT low after EN rises (ride EN RC)
-    finalSettle     = 140,   // ms settle after releasing BOOT
-    settleBetween   = 150,   // ms between a pre-boot and connect
-    settleBetweenCycles = 150, // ms between cycles
-    probe           = true   // upload stub + flashId after connect to confirm ROM/stub
+    baud                 = OPEN_BAUD,
+    cycles               = 2,     // this mimics your two manual clicks
+    // timings widened to better match the pause you naturally had between clicks
+    neutral              = 180,   // ms
+    bootHoldBefore       = 300,   // ms BOOT low before touching EN
+    enLow                = 400,   // ms EN low (reset width)
+    bootHoldAfter        = 350,   // ms keep BOOT low AFTER EN rises (ride EN RC)
+    finalSettle          = 200,   // ms settle after releasing BOOT
+    settleBetween        = 350,   // ms between pre-boot and connect
+    settleBetweenCycles  = 400    // ms between attempts
   } = {}
 ) {
-
+  // ONE native pre-boot cycle (always set BOTH modem lines in every call)
   async function prebootCycle(tag) {
-    // Ensure native port is closed, then open and drive BOTH signals each call (CH340 quirk).
+    // Ensure port closed, then open it to drive signals
     try { await port.close(); } catch {}
     w(`${tag}: port.open() …`);
     await port.open({ baudRate: baud });
@@ -225,7 +225,7 @@ async function connectCH340(
     await port.setSignals({ dataTerminalReady: true, requestToSend: true });
     await sleep(enLow);
 
-    // 3) EN=HIGH (DTR=false) — ROM samples IO0 LOW here
+    // 3) EN=HIGH (DTR=false) — ROM samples IO0 here (still LOW)
     w(`${tag}: EN=HIGH (DTR=false), BOOT still LOW (ROM samples) hold ${bootHoldAfter}ms`);
     await port.setSignals({ dataTerminalReady: false, requestToSend: true });
     await sleep(bootHoldAfter);
@@ -240,13 +240,15 @@ async function connectCH340(
     catch (e) { w(`${tag}: port.close() err: ${e?.message || e}`); }
   }
 
+  // Repeat the SAME sequence N times: (pre-boot -> fresh connect)
   for (let i = 1; i <= cycles; i++) {
     const tag = `CH340: pre-boot #${i}`;
     try {
       await prebootCycle(tag);
+      w(`CH340: settleBetween before connect: ${settleBetween}ms`);
       await sleep(settleBetween);
 
-      // Fresh transport/loader for this attempt
+      // Fresh Transport/Loader for THIS attempt
       transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
       loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
 
@@ -254,35 +256,12 @@ async function connectCH340(
       await loader.connect();
       w(`CONNECT(CH340): SUCCESS (attempt ${i})`);
 
-      // Optional: verify we're really in ROM/stub (helps while we tune CH340)
-      if (probe) {
-        await sleep(120); // small settle; stay @115200 for CH340
-        try {
-          w('STUB(CH340): Uploading/running stub …');
-          await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
-          w('STUB(CH340): Stub running (@115200).');
-
-          // JEDEC probe after stub to avoid 0xFFFF reads
-          w('PROBE(CH340): flashId() …');
-          const id = await loader.flashId();
-          if (typeof id === 'number') {
-            const man = (id >>> 16) & 0xff;
-            const dev = id & 0xffff;
-            w(`PROBE(CH340): JEDEC -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
-          } else {
-            w('PROBE(CH340): flashId returned non-number (continuing).');
-          }
-        } catch (e) {
-          w(`PROBE/STUB(CH340): FAILED (continuing): ${e?.message || e}`);
-        }
-      }
-
-      return true; // success on this attempt
+      // Stop here for connect/disconnect validation (no stub/baud here).
+      return true;
 
     } catch (e) {
       w(`CONNECT(CH340): attempt ${i} FAILED: ${e?.message || e}`);
-
-      // Cleanup before next cycle
+      // Clean up before next cycle so the next pre-boot starts fresh
       try { await transport?.disconnect?.(); } catch {}
       try {
         const stillOpen = !!(port && (port.readable || port.writable));
