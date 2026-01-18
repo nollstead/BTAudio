@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v15</h1>
+  <h1>BTAudio – Minimal Flash Test v16</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -185,23 +185,19 @@ btnConnect.onclick = async () => {
 };
 
 
-
-
-// Minimal, single-pass CH340 connect.
-// Mapping used here (typical on Windows SparkFun CH340):
-//   RTS -> BOOT (GPIO0, active-LOW)
-//   DTR -> EN   (reset,  active-LOW)
+// Minimal, single-pass CH340 connect + stub + probe @115200
+// Mapping used here (SparkFun CH340 on Windows, based on your observations):
+//   RTS -> BOOT (GPIO0, active-LOW)   DTR -> EN (reset, active-LOW)
 async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
   try {
     // Ensure native port starts closed
     try { await port.close(); } catch {}
 
-    // --- Pre-boot using native setSignals() ---
+    // --- Pre-boot using native setSignals() (always set BOTH DTR/RTS) ---
     w('CH340: pre-boot -> port.open() …');
     await port.open({ baudRate: baud });
     w('CH340: port.open() OK');
 
-    // Always send BOTH fields every time (CH340 quirk).
     // 0) Neutral: EN=HIGH (DTR=false), BOOT=HIGH (RTS=false)
     w('CH340: Neutral (EN=HIGH, BOOT=HIGH) hold 100ms');
     await port.setSignals({ dataTerminalReady: false, requestToSend: false });
@@ -227,7 +223,7 @@ async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
     await port.setSignals({ dataTerminalReady: false, requestToSend: false });
     await sleep(140);
 
-    // Close native port before handing to esptool-js
+    // Close native port before handing to esptool‑js
     try { await port.close(); w('CH340: port.close() OK'); } catch (e) {
       w(`CH340: port.close() err: ${e?.message || e}`);
     }
@@ -240,27 +236,50 @@ async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
     await loader.connect();
     w('CONNECT(CH340): SUCCESS');
 
-    // Quick probe to confirm ROM/stub (optional but recommended while tuning)
+    // *** Key differences vs previous run ***
+    // (A) Brief settle after connect, still @115200
+    await sleep(120);
+
+    // (B) Upload stub BEFORE probing flash, still @115200
     try {
-      w('CONNECT(CH340): probe flashId() …');
-      const id = await loader.flashId();
-      const man = (id >> 16) & 0xff, dev = id & 0xffff;
-      w(`CONNECT(CH340): probe OK -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+      w('STUB(CH340): Uploading/running stub …');
+      await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
+      w('STUB(CH340): Stub running (@115200).');
     } catch (e) {
-      w(`CONNECT(CH340): probe flashId FAILED (continuing): ${e?.message || e}`);
+      w(`STUB(CH340): Stub load FAILED (continuing): ${e?.message || e}`);
+      // Continue anyway; ROM may still answer flashId
+    }
+
+    // (C) Probe AFTER stub, still @115200
+    try {
+      w('PROBE(CH340): flashId() …');
+      const id = await loader.flashId();   // stay @115200 for CH340
+      const man = (id >> 16) & 0xff, dev = id & 0xffff;
+      w(`PROBE(CH340): JEDEC -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+    } catch (e) {
+      w(`PROBE(CH340): flashId FAILED (continuing): ${e?.message || e}`);
+    }
+
+    // Optional: detect size (still at 115200)
+    if (typeof loader.detectFlashSize === 'function') {
+      try {
+        w('PROBE(CH340): detectFlashSize() …');
+        const sizeStr = await loader.detectFlashSize();
+        w(`PROBE(CH340): size -> ${sizeStr}`);
+      } catch (e) {
+        w(`PROBE(CH340): detectFlashSize FAILED (continuing): ${e?.message || e}`);
+      }
     }
 
     return true;
 
   } catch (err) {
     w(`CONNECT(CH340): FAILED: ${err?.message || err}`);
-    // Leave clean for manual retry
     try { await transport?.disconnect?.(); } catch {}
     try { await port?.close?.(); } catch {}
     return false;
   }
 }
-
 
 
     // ---------- Disconnect ----------
