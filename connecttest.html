@@ -24,12 +24,7 @@
   <div class="panel">
     <div class="row">
       <button id="btnConnect"  disabled>Connect</button>
-      <button id="btnFlash"    disabled>Flash</button>
       <button id="btnDisconnect" disabled>Disconnect</button>
-    </div>
-    <div class="muted" style="margin-top:6px">
-      Binary: <code id="binUrlLabel">https://nollstead.github.io/BTAudio/webflash/BTAudio.bin</code> @ <code>0x000000</code>
-    </div>
   </div>
 
   <div class="panel">
@@ -63,7 +58,6 @@
 
     // ---------- DOM ----------
     const btnConnect    = document.getElementById('btnConnect');
-    const btnFlash      = document.getElementById('btnFlash');
     const btnDisconnect = document.getElementById('btnDisconnect');
     document.getElementById('binUrlLabel').textContent = BIN_URL;
 
@@ -168,7 +162,6 @@ btnDisconnect.onclick = async () => {
   }
 };
 
-
     // ---------- On unload ----------
     window.addEventListener('unload',()=>{
       try{ transport?.disconnect?.(); }catch{}
@@ -177,7 +170,6 @@ btnDisconnect.onclick = async () => {
 
     // Enable Connect when ESPLoader is present
     btnConnect.disabled = !(Transport && ESPLoader);
-    w('READY: Minimal test loaded. Click Connect, then Flash.');
   </script>
 </body>
 </html>
