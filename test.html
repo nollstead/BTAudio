@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v3</h1>
+  <h1>BTAudio – Minimal Flash Test v4</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -97,13 +97,13 @@ function u8ToBinaryString(u8) {
         ${e?.message||e}`);
       }
       
-      try { 
-        await loader?.flashFinish?.(false); 
-        w('DISCONNECT: loader.flashFinish(false) OK'); 
-      } catch(e) { 
-        w(`DISCONNECT: flashFinish(false) err: 
-        ${e?.message||e}`); 
-      }
+      //try { 
+      //  await loader?.flashFinish?.(false); 
+      //  w('DISCONNECT: loader.flashFinish(false) OK'); 
+      //} catch(e) { 
+      //  w(`DISCONNECT: flashFinish(false) err: 
+      //  ${e?.message||e}`); 
+      //}
       
       //try { 
       //  await port?.close?.(); 
