@@ -11,6 +11,7 @@
     h1{margin:0 0 8px}.muted{color:var(--muted)}
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
     .row{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;align-items:center}
+    .fw-label-row {flex-basis: 100%; margin-bottom: 6px;}
     .instructions{background:#1e1e1e;border-radius:14px;padding:18px;margin-top:10px}
     button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
     button[disabled]{opacity:.55;cursor:not-allowed}
@@ -41,13 +42,16 @@
       <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
 
-    <!-- Version picker (manifest-driven) -->
-    <div class="row" style="align-items:flex-start">
-      <div style="min-width:150px"><label>Firmware Version</label></div>
-      <div id="fwList" class="fw-list">
-        <div class="fw-item"><em class="muted">Loading versions…</em></div>
-      </div>
-    </div>
+<!-- Version picker (manifest-driven) -->
+<div class="row" style="align-items:flex-start">
+  <div class="fw-label-row">
+    <label>Firmware Version</label>
+  </div>
+
+  <div id="fwList" class="fw-list">
+    <div class="fw-item"><em class="muted">Loading versions…</em></div>
+  </div>
+</div>
 
     <div class="instructions">
       <h3>Instructions</h3>
