@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v7</h1>
+  <h1>BTAudio – Minimal Flash Test v8</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -277,31 +277,45 @@ btnConnect.onclick = async () => {
     // ---------- Disconnect ----------
     btnDisconnect.onclick = safeDisconnect;
 
+
 async function safeDisconnect() {
   w('DISCONNECT: Begin cleanup …');
-  try {
-    // Best-effort transport disconnect
-    try {
-      await transport?.disconnect?.();
-      w('DISCONNECT: transport.disconnect() OK');
-    } catch(e) {
-      w(`DISCONNECT: transport.disconnect() err: ${e?.message||e}`);
-    }
 
-    // Close the Web Serial port so next Connect starts clean
-    try {
-      await port?.close?.();
-      w('DISCONNECT: port.close() OK');
-    } catch(e) {
-      w(`DISCONNECT: port.close() err: ${e?.message||e}`);
-    }
-  } finally {
-    port = transport = loader = null;
-    connected = false; stubReady = false;
-    btnConnect.disabled = false; btnFlash.disabled = true; btnDisconnect.disabled = true;
-    w('DISCONNECT: Completed.');
+  // 1) Best‑effort esptool transport disconnect (this closes the port internally)
+  try {
+    await transport?.disconnect?.();
+    w('DISCONNECT: transport.disconnect() OK');
+  } catch (e) {
+    w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
   }
+
+  // 2) Only call port.close() if the port still appears open.
+  //    Web Serial exposes readable/writable when open; when closed they are null/undefined.
+  try {
+    const stillOpen = !!(port && (port.readable || port.writable));
+    if (stillOpen) {
+      await port.close();
+      w('DISCONNECT: port.close() OK (fallback close)');
+    } else {
+      w('DISCONNECT: port already closed (no-op)');
+    }
+  } catch (e) {
+    // Swallow benign "already closed" noise
+    if (String(e?.message || '').includes('already closed')) {
+      w('DISCONNECT: port.close() skipped (already closed).');
+    } else {
+      w(`DISCONNECT: port.close() err: ${e?.message || e}`);
+    }
+  }
+
+  // 3) Reset local state/UI
+  port = transport = loader = null;
+  connected = false; stubReady = false;
+  btnConnect.disabled = false; btnFlash.disabled = true; btnDisconnect.disabled = true;
+
+  w('DISCONNECT: Completed.');
 }
+
 
     // ---------- On unload ----------
     window.addEventListener('unload',()=>{
