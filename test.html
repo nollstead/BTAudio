@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v30</h1>
+  <h1>BTAudio – Minimal Flash Test v31</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -157,16 +157,6 @@ btnConnect.onclick = async () => {
 
       // --- CH340 / SparkFun ---
       case 0x1a86: {
-         //w('CONNECT: Detected CH340 (SparkFun). Launchpad-style connect.');
-         // // Do not pre-toggle control lines; let esptool-js .main() do its job.
-         // const ok = await connectCH340_LaunchpadStyle(port, { baud: OPEN_BAUD });
-         // if (!ok) {
-         //   btnConnect.disabled = false; // allow retry
-         //   return;
-         // }
-         // connected = true;
-         // btnFlash.disabled = !connected;
-         // btnDisconnect.disabled = !connected;
         try {
             //const loaderOptions = {
             //    transport,
@@ -177,14 +167,15 @@ btnConnect.onclick = async () => {
             loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
             w('after new esploader')
             connected = true;
-            chipDesc = await loader.main();
-            w('after esploader.main')
+            //chipDesc = await loader.main();
+            //w('after esploader.main')
             chip = loader.chip.CHIP_NAME;    
             await loader.flashId();
             w('after esploader.flashid')          
         } catch(e) {
-          w(`CH340 FAILED: ${e?.message || e}`);
-        }          
+          w(`Error: ${e?.message || e}`);
+        }
+        btnDisconnect.disabled = !connected;        
         break;
       }
 
