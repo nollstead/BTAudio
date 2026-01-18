@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v14</h1>
+  <h1>BTAudio – Minimal Flash Test v15</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -186,82 +186,81 @@ btnConnect.onclick = async () => {
 
 
 
-// Minimal CH340 connect (one fallback) – uses transport pulse, then closes and recreates before retry.
-// CH340 mapping used here (common on Windows): RTS -> BOOT (GPIO0, active-LOW), DTR -> EN (reset, active-LOW)
+
+// Minimal, single-pass CH340 connect.
+// Mapping used here (typical on Windows SparkFun CH340):
+//   RTS -> BOOT (GPIO0, active-LOW)
+//   DTR -> EN   (reset,  active-LOW)
 async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
   try {
-    // Build transport/loader and let esptool-js try normally (Attempt 1)
-    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
-    loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
+    // Ensure native port starts closed
+    try { await port.close(); } catch {}
 
-    w('CONNECT(CH340): Attempt 1 – ESPLoader.connect() …');
-    try {
-      await loader.connect();
-      w('CONNECT(CH340): SUCCESS (attempt 1)');
-      return true;
-    } catch (e1) {
-      w(`CONNECT(CH340): attempt 1 FAILED: ${e1?.message||e1}`);
+    // --- Pre-boot using native setSignals() ---
+    w('CH340: pre-boot -> port.open() …');
+    await port.open({ baudRate: baud });
+    w('CH340: port.open() OK');
+
+    // Always send BOTH fields every time (CH340 quirk).
+    // 0) Neutral: EN=HIGH (DTR=false), BOOT=HIGH (RTS=false)
+    w('CH340: Neutral (EN=HIGH, BOOT=HIGH) hold 100ms');
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    await sleep(100);
+
+    // 1) BOOT=LOW (RTS=true) – hold before touching EN
+    w('CH340: BOOT=LOW (RTS=true), EN=HIGH (DTR=false) hold 220ms');
+    await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+    await sleep(220);
+
+    // 2) EN=LOW (DTR=true) while BOOT stays LOW
+    w('CH340: EN=LOW (DTR=true), BOOT still LOW hold 350ms');
+    await port.setSignals({ dataTerminalReady: true, requestToSend: true });
+    await sleep(350);
+
+    // 3) EN=HIGH (DTR=false) — ROM samples IO0 here (still LOW)
+    w('CH340: EN=HIGH (DTR=false), BOOT still LOW (ROM samples now) hold 280ms');
+    await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+    await sleep(280);
+
+    // 4) BOOT=HIGH (RTS=false) — release after EN has cleanly risen
+    w('CH340: BOOT=HIGH (RTS=false) settle 140ms');
+    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    await sleep(140);
+
+    // Close native port before handing to esptool-js
+    try { await port.close(); w('CH340: port.close() OK'); } catch (e) {
+      w(`CH340: port.close() err: ${e?.message || e}`);
     }
 
-    // ----- Transport-level pulse while the port is still open -----
-    const bootHoldBefore = 180;  // ms BOOT low before touching EN
-    const enLow          = 300;  // ms EN low (reset)
-    const bootHoldAfter  = 220;  // ms keep BOOT low after EN rises
-    const settle         = 100;  // ms final settle
-
-    // Neutral first: EN=HIGH (DTR=false), BOOT=HIGH (RTS=false)
-    w('CH340: neutralize via transport (EN=HIGH, BOOT=HIGH)');
-    try { await transport.setDTR(false); } catch {}
-    try { await transport.setRTS(false); } catch {}
-    await sleep(60);
-
-    // BOOT = LOW (RTS=true)
-    w(`CH340: BOOT=LOW (RTS=true) hold ${bootHoldBefore}ms`);
-    await transport.setRTS(true);
-    await sleep(bootHoldBefore);
-
-    // EN = LOW (DTR=true) while BOOT remains LOW
-    w(`CH340: EN=LOW (DTR=true), BOOT still LOW hold ${enLow}ms`);
-    await transport.setDTR(true);
-    await sleep(enLow);
-
-    // EN = HIGH (DTR=false) — ROM samples IO0 here (still LOW)
-    w(`CH340: EN=HIGH (DTR=false), BOOT still LOW hold ${bootHoldAfter}ms`);
-    await transport.setDTR(false);
-    await sleep(bootHoldAfter);
-
-    // BOOT = HIGH (RTS=false)
-    w(`CH340: BOOT=HIGH (RTS=false) settle ${settle}ms`);
-    await transport.setRTS(false);
-    await sleep(settle);
-
-    // ----- CRUCIAL: close the port before trying connect() again -----
-    w('CH340: closing transport before retry …');
-    try { await transport.disconnect(); w('CH340: transport.disconnect() OK'); } catch(e) { w(`CH340: transport.disconnect() err: ${e?.message||e}`); }
-    // (If the browser still thinks it’s open, try a native close as a fallback)
-    try {
-      const stillOpen = !!(port && (port.readable || port.writable));
-      if (stillOpen) { await port.close(); w('CH340: port.close() OK'); }
-    } catch(e) { w(`CH340: port.close() err: ${e?.message||e}`); }
-    await sleep(50);
-
-    // Rebuild Transport/Loader on a closed port, then retry connect (Attempt 2)
+    // --- esptool-js connect on a fresh Transport/Loader ---
     transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
     loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
 
-    w('CONNECT(CH340): Attempt 2 – ESPLoader.connect() after transport pulse …');
+    w('CONNECT(CH340): Calling ESPLoader.connect() …');
     await loader.connect();
-    w('CONNECT(CH340): SUCCESS (attempt 2)');
+    w('CONNECT(CH340): SUCCESS');
+
+    // Quick probe to confirm ROM/stub (optional but recommended while tuning)
+    try {
+      w('CONNECT(CH340): probe flashId() …');
+      const id = await loader.flashId();
+      const man = (id >> 16) & 0xff, dev = id & 0xffff;
+      w(`CONNECT(CH340): probe OK -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+    } catch (e) {
+      w(`CONNECT(CH340): probe flashId FAILED (continuing): ${e?.message || e}`);
+    }
+
     return true;
 
   } catch (err) {
     w(`CONNECT(CH340): FAILED: ${err?.message || err}`);
-    // Leave things sane for a manual retry
+    // Leave clean for manual retry
     try { await transport?.disconnect?.(); } catch {}
     try { await port?.close?.(); } catch {}
     return false;
   }
 }
+
 
 
     // ---------- Disconnect ----------
