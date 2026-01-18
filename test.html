@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v8</h1>
+  <h1>BTAudio – Minimal Flash Test v9</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -90,40 +90,7 @@ function u8ToBinaryString(u8) {
   return s;
 }
 
-    //async function safeDisconnect() {
-    //  w('DISCONNECT: Begin cleanup …');
-    //  try { 
-    //    await transport?.disconnect?.(); 
-    //    w('DISCONNECT: transport.disconnect() OK');
-    //  } catch(e) { 
-    //    w(`DISCONNECT: transport.disconnect() err: 
-    //    ${e?.message||e}`);
-    //  }
-      
-    //  //try { 
-    //  //  await loader?.flashFinish?.(false); 
-    //  //  w('DISCONNECT: loader.flashFinish(false) OK'); 
-    //  //} catch(e) { 
-    //  //  w(`DISCONNECT: flashFinish(false) err: 
-    //  //  ${e?.message||e}`); 
-    //  //}
-    //  
-    //  //try { 
-    //  //  await port?.close?.(); 
-    //  //  w('DISCONNECT: port.close() OK'); 
-    //  //} catch(e) { 
-    //  //  w(`DISCONNECT: port.close() err: ${e?.message||e}`); 
-    //  //}
-      
-      //port=transport=loader=null; connected=false; stubReady=false;
-      //btnConnect.disabled=false; btnFlash.disabled=true; btnDisconnect.disabled=true;
-      //w('DISCONNECT: Completed.');
-    //}
-
-
 // ---------- Connect ----------
-
-// ---------- Connect (switch on VendorID) ----------
 btnConnect.onclick = async () => {
   btnConnect.disabled = true;
   try {
@@ -190,9 +157,86 @@ btnConnect.onclick = async () => {
 
       // --- CH340 / SparkFun (defer handling for now) ---
       case 0x1a86: {
-        w('CONNECT: Detected CH340 (SparkFun). Skipping connect for now; we will add CH340-specific timing later.');
-        btnConnect.disabled = false; // allow user to try again or disconnect
-        return;
+        //w('CONNECT: Detected CH340 (SparkFun). Skipping connect for now; we will add CH340-specific timing later.');
+        //btnConnect.disabled = false; // allow user to try again or disconnect
+        //return;
+
+        w('CONNECT: Detected CH340 (SparkFun). Using CH340-specific connect flow.');
+        
+          // Build transport/loader and try a normal esptool-js connect first
+          transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+          loader    = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+        
+          let synced = false;
+          try {
+            w('CONNECT(CH340): Attempt 1 – ESPLoader.connect() …');
+            await loader.connect();
+            synced = true;
+            w('CONNECT(CH340): SUCCESS (attempt 1)');
+          } catch (e1) {
+            w(`CONNECT(CH340): attempt 1 FAILED: ${e1?.message||e1}`);
+        
+            // ---- CH340 pre-boot sequence (temporary open -> drive signals -> close) ----
+            // CH340 quirks:
+            //  - include BOTH DTR and RTS in every setSignals() call
+            //  - hold BOOT low before EN low, keep BOOT low through EN rising
+            //  - longer pulses (EN low ~250ms, holds ~120–200ms)
+            try {
+              w('CH340: pre-boot prep -> port.open() …');
+              await port.open({ baudRate: OPEN_BAUD });
+              w('CH340: port.open() OK');
+        
+              // 1) BOOT=LOW (DTR=true), EN=HIGH (RTS=false)
+              w('CH340: BOOT=LOW, EN=HIGH');
+              await port.setSignals({ dataTerminalReady: true,  requestToSend: false });
+              await sleep(120);
+        
+              // 2) EN=LOW (RTS=true) – assert reset while BOOT is low
+              w('CH340: EN=LOW (reset)');
+              await port.setSignals({ dataTerminalReady: true,  requestToSend: true  });
+              await sleep(250);
+        
+              // 3) EN=HIGH (RTS=false) – ROM samples GPIO0 here; still LOW
+              w('CH340: EN=HIGH (sample BOOT LOW)');
+              await port.setSignals({ dataTerminalReady: true,  requestToSend: false });
+              await sleep(200);
+        
+              // 4) BOOT=HIGH (DTR=false) – release BOOT after EN has risen
+              w('CH340: BOOT=HIGH (release)');
+              await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+              await sleep(80);
+            } catch (prepErr) {
+              w(`CH340: pre-boot prep error: ${prepErr?.message||prepErr}`);
+            } finally {
+              try { await port.close(); w('CH340: port.close() OK'); } catch {}
+            }
+        
+            // Rebuild transport/loader after closing the port for the prep step
+            transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+            loader    = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+        
+            try {
+              w('CONNECT(CH340): Attempt 2 – ESPLoader.connect() after prep …');
+              await loader.connect();
+              synced = true;
+              w('CONNECT(CH340): SUCCESS (attempt 2)');
+            } catch (e2) {
+              w(`CONNECT(CH340): attempt 2 FAILED: ${e2?.message||e2}`);
+            }
+          }
+        
+          if (!synced) {
+            // leave UI ready for another try
+            btnConnect.disabled = false;
+            return;
+          }
+        
+          // For this CH340 focus phase, stop after connect success (no stub/baud/etc.)
+          connected = true;
+          btnFlash.disabled = !connected;
+          btnDisconnect.disabled = !connected;
+          break;
+
       }
 
       // --- Anything else ---
@@ -208,71 +252,6 @@ btnConnect.onclick = async () => {
     btnConnect.disabled = false;
   }
 };
-
-    /*
-    btnConnect.onclick = async () => {
-      btnConnect.disabled = true;
-      try {
-        if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
-        w(`ENV: UA=${navigator.userAgent}`);
-
-        port = await navigator.serial.requestPort({ filters: FILTERS });
-        const info = port.getInfo?.()||{};
-        w(`CONNECT: Selected port -> VID=0x${(info.usbVendorId||0).toString(16)} PID=0x${(info.usbProductId||0).toString(16)}`);
-
-        transport = new Transport(port, false, false);
-        loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
-
-        // Stock esptool-js sync (handles DevKitC auto-reset via DTR/RTS)
-        w('CONNECT: Calling ESPLoader.connect() …');
-        await loader.connect();
-        connected = true;
-        w('CONNECT: SUCCESS');
-
-        // Upload stub → high baud
-        try {
-          w('STUB: Uploading/running stub …');
-          await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
-          stubReady = true;
-          w('STUB: Stub running.');
-        } catch (e) {
-          w(`STUB: Stub load failed (continuing): ${e?.message || e}`);
-        }
-
-        try {
-          w(`BAUD: Changing baudrate to ${FAST_BAUD} …`);
-          await loader.changeBaud(FAST_BAUD);
-          w('BAUD: Changed.');
-        } catch (e) {
-          w(`BAUD: Change failed (continuing at ${OPEN_BAUD}): ${e?.message||e}`);
-        }
-
-        // Flash ID & size (informational)
-        try {
-          const id = await loader.flashId();
-          if (id) {
-            const man = (id >> 16) & 0xff, dev = id & 0xffff;
-            w(`FLASHID: Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
-          }
-        } catch (e) { w(`FLASHID: Failed: ${e?.message||e}`); }
-        try {
-          if (typeof loader.detectFlashSize === 'function') {
-            const sizeStr = await loader.detectFlashSize();
-            w(`FLASHID: Detected flash size = ${sizeStr}`);
-          }
-        } catch (e) { w(`FLASHID: Size detect failed: ${e?.message||e}`); }
-
-        btnFlash.disabled = !connected;
-        btnDisconnect.disabled = !connected;
-
-      } catch (e) {
-        w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
-        try { await port?.close?.(); } catch {}
-        btnConnect.disabled = false;
-      }
-    };
-    */
-
 
     // ---------- Disconnect ----------
     btnDisconnect.onclick = safeDisconnect;
