@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v12</h1>
+  <h1>BTAudio – Minimal Flash Test v13</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -185,74 +185,67 @@ btnConnect.onclick = async () => {
 };
 
 
-// Minimal CH340 connect (single attempt, ample logging, no inner helpers)
-// Mapping used here because it previously "did something":
-//   DTR -> BOOT (GPIO0, active-low)
-//   RTS -> EN   (reset,  active-low)
+// Minimal CH340 connect (no native port.open/close; uses transport.setDTR/RTS if needed)
+// Mapping used here (typical for CH340 on Windows):
+//   RTS -> BOOT (GPIO0, active-LOW)
+//   DTR -> EN   (reset,  active-LOW)
 async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
   try {
-    // Make sure native port starts closed
-    try { await port.close(); } catch {}
-
-    // --- Pre-boot using raw Web Serial signals ---
-    w('CH340: pre-boot -> port.open() …');
-    await port.open({ baudRate: baud });
-    w('CH340: port.open() OK');
-
-    // Always send BOTH fields in each setSignals() for CH340.
-
-    // 0) Neutralize first: EN=HIGH (RTS=false), BOOT=HIGH (DTR=false)
-    w('CH340: Neutral (EN=HIGH, BOOT=HIGH) hold 80ms');
-    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-    await sleep(80);
-
-    // 1) BOOT=LOW (DTR=true), EN=HIGH (RTS=false)
-    w('CH340: BOOT=LOW (DTR=true), EN=HIGH (RTS=false) hold 180ms');
-    await port.setSignals({ dataTerminalReady: true, requestToSend: false });
-    await sleep(180);
-
-    // 2) EN=LOW (RTS=true) while BOOT remains LOW
-    w('CH340: EN=LOW (RTS=true), BOOT still LOW hold 300ms');
-    await port.setSignals({ dataTerminalReady: true, requestToSend: true });
-    await sleep(300);
-
-    // 3) EN=HIGH (RTS=false) — ROM samples GPIO0 here (should still be LOW)
-    w('CH340: EN=HIGH (RTS=false), BOOT still LOW (ROM samples now) hold 220ms');
-    await port.setSignals({ dataTerminalReady: true, requestToSend: false });
-    await sleep(220);
-
-    // 4) BOOT=HIGH (DTR=false) — release after EN has risen long enough
-    w('CH340: BOOT=HIGH (DTR=false) settle 120ms');
-    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-    await sleep(120);
-
-    // Close native port before giving control to esptool‑js
-    try { await port.close(); w('CH340: port.close() OK'); } catch (e) {
-      w(`CH340: port.close() err: ${e?.message || e}`);
-    }
-
-    // --- esptool-js connect on a fresh Transport/Loader ---
+    // 1) Build transport/loader and let esptool-js try normally
     transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
     loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
 
-    w('CONNECT(CH340): Calling ESPLoader.connect() …');
-    await loader.connect();
-    w('CONNECT(CH340): SUCCESS');
-
-    // (Optional but helpful): quick probe so we know we truly hit ROM/stub
+    w('CONNECT(CH340): Attempt 1 – ESPLoader.connect() …');
     try {
-      const id = await loader.flashId();
-      const man = (id >> 16) & 0xff, dev = id & 0xffff;
-      w(`CONNECT(CH340): probe flashId -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
-    } catch (e) {
-      w(`CONNECT(CH340): probe flashId FAILED (continuing): ${e?.message || e}`);
+      await loader.connect();
+      w('CONNECT(CH340): SUCCESS (attempt 1)');
+      return true;
+    } catch (e1) {
+      w(`CONNECT(CH340): attempt 1 FAILED: ${e1?.message||e1}`);
     }
 
-    return true; // success
+    // 2) Attempt 2: explicit pulse using transport.setDTR/RTS (no native port.open())
+    // Goal: IO0 (BOOT) low at EN rising edge.
+    const bootHoldBefore = 180;   // ms BOOT low before touching EN
+    const enLow          = 300;   // ms EN low
+    const bootHoldAfter  = 220;   // ms keep BOOT low after EN rises
+    const settle         = 100;   // ms final settle
+
+    // Make sure both lines are idle-high first (DTR=false -> EN high, RTS=false -> BOOT high)
+    w('CH340: neutralize via transport (EN=HIGH, BOOT=HIGH)');
+    try { await transport.setDTR(false); } catch {}
+    try { await transport.setRTS(false); } catch {}
+    await sleep(60);
+
+    // BOOT = LOW (RTS=true)
+    w(`CH340: BOOT=LOW (RTS=true) hold ${bootHoldBefore}ms`);
+    await transport.setRTS(true);
+    await sleep(bootHoldBefore);
+
+    // EN = LOW (DTR=true) while BOOT remains LOW
+    w(`CH340: EN=LOW (DTR=true), BOOT still LOW hold ${enLow}ms`);
+    await transport.setDTR(true);
+    await sleep(enLow);
+
+    // EN = HIGH (DTR=false) — ROM samples IO0 here (still LOW)
+    w(`CH340: EN=HIGH (DTR=false), BOOT still LOW hold ${bootHoldAfter}ms`);
+    await transport.setDTR(false);
+    await sleep(bootHoldAfter);
+
+    // BOOT = HIGH (RTS=false) — release after EN has risen
+    w(`CH340: BOOT=HIGH (RTS=false) settle ${settle}ms`);
+    await transport.setRTS(false);
+    await sleep(settle);
+
+    // Try connect again
+    w('CONNECT(CH340): Attempt 2 – ESPLoader.connect() after transport pulse …');
+    await loader.connect();
+    w('CONNECT(CH340): SUCCESS (attempt 2)');
+    return true;
 
   } catch (err) {
     w(`CONNECT(CH340): FAILED: ${err?.message || err}`);
-    // Leave things in a sane state for a retry
+    // leave things sane for a retry
     try { await transport?.disconnect?.(); } catch {}
     try { await port?.close?.(); } catch {}
     return false;
