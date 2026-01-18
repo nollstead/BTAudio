@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v5</h1>
+  <h1>BTAudio – Minimal Flash Test v6</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -90,37 +90,117 @@ function u8ToBinaryString(u8) {
   return s;
 }
 
-    async function safeDisconnect() {
-      w('DISCONNECT: Begin cleanup …');
-      try { 
-        await transport?.disconnect?.(); 
-        w('DISCONNECT: transport.disconnect() OK');
-      } catch(e) { 
-        w(`DISCONNECT: transport.disconnect() err: 
-        ${e?.message||e}`);
-      }
+    //async function safeDisconnect() {
+    //  w('DISCONNECT: Begin cleanup …');
+    //  try { 
+    //    await transport?.disconnect?.(); 
+    //    w('DISCONNECT: transport.disconnect() OK');
+    //  } catch(e) { 
+    //    w(`DISCONNECT: transport.disconnect() err: 
+    //    ${e?.message||e}`);
+    //  }
       
-      //try { 
-      //  await loader?.flashFinish?.(false); 
-      //  w('DISCONNECT: loader.flashFinish(false) OK'); 
-      //} catch(e) { 
-      //  w(`DISCONNECT: flashFinish(false) err: 
-      //  ${e?.message||e}`); 
-      //}
+    //  //try { 
+    //  //  await loader?.flashFinish?.(false); 
+    //  //  w('DISCONNECT: loader.flashFinish(false) OK'); 
+    //  //} catch(e) { 
+    //  //  w(`DISCONNECT: flashFinish(false) err: 
+    //  //  ${e?.message||e}`); 
+    //  //}
+    //  
+    //  //try { 
+    //  //  await port?.close?.(); 
+    //  //  w('DISCONNECT: port.close() OK'); 
+    //  //} catch(e) { 
+    //  //  w(`DISCONNECT: port.close() err: ${e?.message||e}`); 
+    //  //}
       
-      //try { 
-      //  await port?.close?.(); 
-      //  w('DISCONNECT: port.close() OK'); 
-      //} catch(e) { 
-      //  w(`DISCONNECT: port.close() err: ${e?.message||e}`); 
-      //}
-      
-      port=transport=loader=null; connected=false; stubReady=false;
-      btnConnect.disabled=false; btnFlash.disabled=true; btnDisconnect.disabled=true;
-      w('DISCONNECT: Completed.');
+      //port=transport=loader=null; connected=false; stubReady=false;
+      //btnConnect.disabled=false; btnFlash.disabled=true; btnDisconnect.disabled=true;
+      //w('DISCONNECT: Completed.');
+    //}
+
+
+// ---------- Connect ----------
+btnConnect.onclick = async () => {
+  btnConnect.disabled = true;
+  try {
+    if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
+    w(`ENV: UA=${navigator.userAgent}`);
+
+    // Ask user to pick a port; we’ll branch by VID/PID
+    port = await navigator.serial.requestPort({ filters: FILTERS });
+    const info = port.getInfo?.()||{};
+    const vid  = (info.usbVendorId  || 0) >>> 0;
+    const pid  = (info.usbProductId || 0) >>> 0;
+    w(`CONNECT: Selected port -> VID=0x${vid.toString(16)} PID=0x${pid.toString(16)}`);
+
+    // --- Device gating ---
+    if (vid === 0x1a86 && pid === 0x7523) {
+      // CH340 (SparkFun): per your request, just log and bail for now.
+      w('CONNECT: Detected CH340 (SparkFun). Skipping connect here; we will handle CH340 timing separately.');
+      btnConnect.disabled = false;
+      return;
+    }
+    if (vid !== 0x10c4) {
+      w('CONNECT: Non-CP210x bridge detected. For now, only LyraT/CP210x is supported by this test. Aborting connect.');
+      btnConnect.disabled = false;
+      return;
     }
 
-    // ---------- Connect ----------
+    // CP210x / LyraT path (works for you today)
+    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+
+    // Stock esptool-js sync (performs DevKitC auto-reset via DTR/RTS)
+    w('CONNECT: Calling ESPLoader.connect() …');
+    await loader.connect();
+    connected = true;
+    w('CONNECT: SUCCESS');
+
+    // Upload stub → high baud
+    try {
+      w('STUB: Uploading/running stub …');
+      await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
+      stubReady = true;
+      w('STUB: Stub running.');
+    } catch (e) {
+      w(`STUB: Stub load failed (continuing): ${e?.message || e}`);
+    }
+
+    try {
+      w(`BAUD: Changing baudrate to ${FAST_BAUD} …`);
+      await loader.changeBaud(FAST_BAUD);
+      w('BAUD: Changed.');
+    } catch (e) {
+      w(`BAUD: Change failed (continuing at ${OPEN_BAUD}): ${e?.message||e}`);
+    }
+
+    // Flash ID & size (informational)
+    try {
+      const id = await loader.flashId();
+      if (id) {
+        const man = (id >> 16) & 0xff, dev = id & 0xffff;
+        w(`FLASHID: Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+      }
+    } catch (e) { w(`FLASHID: Failed: ${e?.message||e}`); }
+    try {
+      if (typeof loader.detectFlashSize === 'function') {
+        const sizeStr = await loader.detectFlashSize();
+        w(`FLASHID: Detected flash size = ${sizeStr}`);
+      }
+    } catch (e) { w(`FLASHID: Size detect failed: ${e?.message||e}`); }
+
+    btnFlash.disabled = !connected;
+    btnDisconnect.disabled = !connected;
+
+  } catch (e) {
+    w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
+    try { await port?.close?.(); } catch {}
+    btnConnect.disabled = false;
+  }
+};
+    /*
     btnConnect.onclick = async () => {
       btnConnect.disabled = true;
       try {
@@ -131,7 +211,7 @@ function u8ToBinaryString(u8) {
         const info = port.getInfo?.()||{};
         w(`CONNECT: Selected port -> VID=0x${(info.usbVendorId||0).toString(16)} PID=0x${(info.usbProductId||0).toString(16)}`);
 
-        transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+        transport = new Transport(port, false, false);
         loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
 
         // Stock esptool-js sync (handles DevKitC auto-reset via DTR/RTS)
@@ -182,11 +262,37 @@ function u8ToBinaryString(u8) {
         btnConnect.disabled = false;
       }
     };
-
+    */
 
 
     // ---------- Disconnect ----------
     btnDisconnect.onclick = safeDisconnect;
+
+async function safeDisconnect() {
+  w('DISCONNECT: Begin cleanup …');
+  try {
+    // Best-effort transport disconnect
+    try {
+      await transport?.disconnect?.();
+      w('DISCONNECT: transport.disconnect() OK');
+    } catch(e) {
+      w(`DISCONNECT: transport.disconnect() err: ${e?.message||e}`);
+    }
+
+    // Close the Web Serial port so next Connect starts clean
+    try {
+      await port?.close?.();
+      w('DISCONNECT: port.close() OK');
+    } catch(e) {
+      w(`DISCONNECT: port.close() err: ${e?.message||e}`);
+    }
+  } finally {
+    port = transport = loader = null;
+    connected = false; stubReady = false;
+    btnConnect.disabled = false; btnFlash.disabled = true; btnDisconnect.disabled = true;
+    w('DISCONNECT: Completed.');
+  }
+}
 
     // ---------- On unload ----------
     window.addEventListener('unload',()=>{
