@@ -106,14 +106,14 @@ btnConnect.onclick = async () => {
     const productId = info.usbProductId || 0;
 
     w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
-    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+    transport = new Transport(port,  false, false);
     loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
     w('loader loaded')
     connected = true;
     chipDesc = await loader.main();
-    w('Chip description: ${chipdesc}`);
+    w('Chip description: ${chipDesc}');
     chip = loader.chip.CHIP_NAME;    
-    w('Chip: ${chip}`);
+    w('Chip: ${chip}');
     await loader.flashId();
     w('after esploader.flashid')          
     btnDisconnect.disabled = !connected;        
