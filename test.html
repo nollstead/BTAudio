@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v26</h1>
+  <h1>BTAudio – Minimal Flash Test v27</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -182,7 +182,7 @@ btnConnect.onclick = async () => {
             await esploader.flashId();
             w('after esploader.flashid')          
         } catch(e) {
-          w(`CH340 FAILED: ${err?.message || err}`);
+          w(`CH340 FAILED: ${e?.message || e}`);
         }          
         break;
       }
