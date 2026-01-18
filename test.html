@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v2</h1>
+  <h1>BTAudio – Minimal Flash Test v3</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -89,9 +89,29 @@ function u8ToBinaryString(u8) {
 
     async function safeDisconnect() {
       w('DISCONNECT: Begin cleanup …');
-      try { await transport?.disconnect?.(); w('DISCONNECT: transport.disconnect() OK'); } catch(e){ w(`DISCONNECT: transport.disconnect() err: ${e?.message||e}`); }
-      try { await loader?.flashFinish?.(false); w('DISCONNECT: loader.flashFinish(false) OK'); } catch(e){ w(`DISCONNECT: flashFinish(false) err: ${e?.message||e}`); }
-      try { await port?.close?.(); w('DISCONNECT: port.close() OK'); } catch(e){ w(`DISCONNECT: port.close() err: ${e?.message||e}`); }
+      try { 
+        await transport?.disconnect?.(); 
+        w('DISCONNECT: transport.disconnect() OK');
+      } catch(e) { 
+        w(`DISCONNECT: transport.disconnect() err: 
+        ${e?.message||e}`);
+      }
+      
+      try { 
+        await loader?.flashFinish?.(false); 
+        w('DISCONNECT: loader.flashFinish(false) OK'); 
+      } catch(e) { 
+        w(`DISCONNECT: flashFinish(false) err: 
+        ${e?.message||e}`); 
+      }
+      
+      //try { 
+      //  await port?.close?.(); 
+      //  w('DISCONNECT: port.close() OK'); 
+      //} catch(e) { 
+      //  w(`DISCONNECT: port.close() err: ${e?.message||e}`); 
+      //}
+      
       port=transport=loader=null; connected=false; stubReady=false;
       btnConnect.disabled=false; btnFlash.disabled=true; btnDisconnect.disabled=true;
       w('DISCONNECT: Completed.');
