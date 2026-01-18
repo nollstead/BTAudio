@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v23</h1>
+  <h1>BTAudio – Minimal Flash Test v24</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -185,20 +185,28 @@ btnConnect.onclick = async () => {
 };
 
 
-// Launchpad-style connect: no manual DTR/RTS; let esptool-js handle everything via .main()
+
+// Launchpad-style connect for CH340: no manual DTR/RTS; let esptool-js .main() do the reset/sync.
+// Uses your page's globals: transport, loader, and either `term` or `espLoaderTerminal`.
 async function connectCH340_LaunchpadStyle(port, { baud = OPEN_BAUD } = {}) {
   try {
-    // Fresh Transport/Loader every connect
+    // Fresh Transport + Loader each attempt
     transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
-    esploader = new ESPLoader({ transport, baudrate: baud, terminal: term });
 
-    w(`CH340: Calling esploader.main() @ ${baud} …`);
-    const chipDesc = await esploader.main(); // auto-reset, ROM sync, stub, baud, chip detect
+    // Choose whichever terminal object your page already defines
+    const terminal = (typeof espLoaderTerminal !== 'undefined')
+      ? espLoaderTerminal
+      : (typeof term !== 'undefined' ? term : { write(){}, writeLine(){}, clean(){} });
+
+    loader = new ESPLoader({ transport, baudrate: baud, terminal });
+
+    w(`CH340: Calling loader.main() @ ${baud} …`);
+    const chipDesc = await loader.main(); // auto-reset -> ROM sync -> stub -> (maybe) baud -> chip detect
     w(`CH340: main() -> ${chipDesc || 'connected'}`);
 
-    // Optional: read flash ID (same as Launchpad)
+    // Optional probe (same as Launchpad): JEDEC flash ID
     try {
-      const id = await esploader.flashId();
+      const id = await loader.flashId();
       const man = (id >>> 16) & 0xff;
       const dev = id & 0xffff;
       w(`CH340: flashId -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
@@ -209,12 +217,13 @@ async function connectCH340_LaunchpadStyle(port, { baud = OPEN_BAUD } = {}) {
     return true;
   } catch (err) {
     w(`CH340: main() FAILED: ${err?.message || err}`);
-    // Clean up so a subsequent attempt starts fresh
+    // Cleanup so a retry starts fresh
     try { await transport?.disconnect?.(); } catch {}
     try { await port?.close?.(); } catch {}
     return false;
   }
 }
+
 
 // Minimal, single-pass CH340 connect + stub + probe @115200
 // Mapping used here (SparkFun CH340 on Windows, based on your observations):
