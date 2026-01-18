@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v22</h1>
+  <h1>BTAudio – Minimal Flash Test v23</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -157,17 +157,17 @@ btnConnect.onclick = async () => {
 
       // --- CH340 / SparkFun ---
       case 0x1a86: {
-        w('CONNECT: Detected CH340 (SparkFun). Using CH340-specific connect flow.');
-        const ok = await connectCH340(port, { baud: OPEN_BAUD });
-        if (!ok) {
-          btnConnect.disabled = false;   // leave UI ready to retry
-          return;
-        }
-        connected = true;
-        // Stop here for your CH340 connect/disconnect validation (no stub/baud/etc.)
-        btnFlash.disabled = !connected;
-        btnDisconnect.disabled = !connected;
-        break;
+         w('CONNECT: Detected CH340 (SparkFun). Launchpad-style connect.');
+          // Do not pre-toggle control lines; let esptool-js .main() do its job.
+          const ok = await connectCH340_LaunchpadStyle(port, { baud: OPEN_BAUD });
+          if (!ok) {
+            btnConnect.disabled = false; // allow retry
+            return;
+          }
+          connected = true;
+          btnFlash.disabled = !connected;
+          btnDisconnect.disabled = !connected;
+          break;
       }
 
       // --- Anything else ---
@@ -183,6 +183,38 @@ btnConnect.onclick = async () => {
     btnConnect.disabled = false;
   }
 };
+
+
+// Launchpad-style connect: no manual DTR/RTS; let esptool-js handle everything via .main()
+async function connectCH340_LaunchpadStyle(port, { baud = OPEN_BAUD } = {}) {
+  try {
+    // Fresh Transport/Loader every connect
+    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+    esploader = new ESPLoader({ transport, baudrate: baud, terminal: term });
+
+    w(`CH340: Calling esploader.main() @ ${baud} …`);
+    const chipDesc = await esploader.main(); // auto-reset, ROM sync, stub, baud, chip detect
+    w(`CH340: main() -> ${chipDesc || 'connected'}`);
+
+    // Optional: read flash ID (same as Launchpad)
+    try {
+      const id = await esploader.flashId();
+      const man = (id >>> 16) & 0xff;
+      const dev = id & 0xffff;
+      w(`CH340: flashId -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
+    } catch (e) {
+      w(`CH340: flashId failed (continuing): ${e?.message || e}`);
+    }
+
+    return true;
+  } catch (err) {
+    w(`CH340: main() FAILED: ${err?.message || err}`);
+    // Clean up so a subsequent attempt starts fresh
+    try { await transport?.disconnect?.(); } catch {}
+    try { await port?.close?.(); } catch {}
+    return false;
+  }
+}
 
 // Minimal, single-pass CH340 connect + stub + probe @115200
 // Mapping used here (SparkFun CH340 on Windows, based on your observations):
