@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v33</h1>
+  <h1>BTAudio – Minimal Flash Test v34</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -106,247 +106,23 @@ btnConnect.onclick = async () => {
     const productId = info.usbProductId || 0;
 
     w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
-
-    // CES
     transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
     loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
-    w('after new esploader')
+    w('loader loaded')
     connected = true;
     chipDesc = await loader.main();
-    w('after esploader.main')
+    w('Chip description: ${chipdesc}`);
     chip = loader.chip.CHIP_NAME;    
+    w('Chip: ${chip}`);
     await loader.flashId();
     w('after esploader.flashid')          
     btnDisconnect.disabled = !connected;        
-
-// end ces
-
-    /*
-    switch (vendorId) {
-      // --- CP210x / LyraT ---
-      case 0x10c4: {
-        // Proceed with your known-good flow
-        transport = new Transport(port, false, false);
-        loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
-
-        w('CONNECT: Calling ESPLoader.connect() …');
-        await loader.connect();
-        connected = true;
-        w('CONNECT: SUCCESS');
-
-        // Upload stub → high baud
-        try {
-          w('STUB: Uploading/running stub …');
-          await (typeof loader.runStub==='function' ? loader.runStub() : loader.loadStub());
-          stubReady = true;
-          w('STUB: Stub running.');
-        } catch (e) {
-          w(`STUB: Stub load failed (continuing): ${e?.message || e}`);
-        }
-
-        try {
-          w(`BAUD: Changing baudrate to ${FAST_BAUD} …`);
-          await loader.changeBaud(FAST_BAUD);
-          w('BAUD: Changed.');
-        } catch (e) {
-          w(`BAUD: Change failed (continuing at ${OPEN_BAUD}): ${e?.message||e}`);
-        }
-
-        // Flash ID & size (informational)
-        try {
-          const id = await loader.flashId();
-          if (id) {
-            const man = (id >> 16) & 0xff, dev = id & 0xffff;
-            w(`FLASHID: Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
-          }
-        } catch (e) { w(`FLASHID: Failed: ${e?.message||e}`); }
-        try {
-          if (typeof loader.detectFlashSize === 'function') {
-            const sizeStr = await loader.detectFlashSize();
-            w(`FLASHID: Detected flash size = ${sizeStr}`);
-          }
-        } catch (e) { w(`FLASHID: Size detect failed: ${e?.message||e}`); }
-
-        btnFlash.disabled = !connected;
-        btnDisconnect.disabled = !connected;
-        break;
-      }
-
-      // --- CH340 / SparkFun ---
-      case 0x1a86: {
-        try {
-            //const loaderOptions = {
-            //    transport,
-            //    baudrate: parseInt(flashingBaudrateSelect.value),
-            //    terminal: espLoaderTerminal
-            //};
-            transport = new Transport(port, false, false);
-            loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
-            w('after new esploader')
-            connected = true;
-            chipDesc = await loader.main();
-            w('after esploader.main')
-            chip = loader.chip.CHIP_NAME;    
-            await loader.flashId();
-            w('after esploader.flashid')          
-            btnDisconnect.disabled = !connected;        
-        } catch(e) {
-          w(`Error: ${e?.message || e}`);
-        }
-        break;
-      }
-
-      // --- Anything else ---
-      default: {
-        w('CONNECT: Unsupported USB bridge for this test page. For now, only CP210x is enabled.');
-        btnConnect.disabled = false;
-        return;
-      }
-    }
-*/
   } catch (e) {
     w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
     try { await port?.close?.(); } catch {}
     btnConnect.disabled = false;
   }
 };
-
-
-
-// Launchpad-style connect for CH340: no manual DTR/RTS; let esptool-js .main() do the reset/sync.
-// Uses your page's globals: transport, loader, and either `term` or `espLoaderTerminal`.
-async function connectCH340_LaunchpadStyle(port, { baud = OPEN_BAUD } = {}) {
-  try {
-    // Fresh Transport + Loader each attempt
-    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
-
-    // Choose whichever terminal object your page already defines
-    const terminal = (typeof espLoaderTerminal !== 'undefined')
-      ? espLoaderTerminal
-      : (typeof term !== 'undefined' ? term : { write(){}, writeLine(){}, clean(){} });
-
-    loader = new ESPLoader({ transport, baudrate: baud, terminal });
-
-    w(`CH340: Calling loader.main() @ ${baud} …`);
-    const chipDesc = await loader.main(); // auto-reset -> ROM sync -> stub -> (maybe) baud -> chip detect
-    w(`CH340: main() -> ${chipDesc || 'connected'}`);
-
-    // Optional probe (same as Launchpad): JEDEC flash ID
-    try {
-      const id = await loader.flashId();
-      const man = (id >>> 16) & 0xff;
-      const dev = id & 0xffff;
-      w(`CH340: flashId -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
-    } catch (e) {
-      w(`CH340: flashId failed (continuing): ${e?.message || e}`);
-    }
-
-    return true;
-  } catch (err) {
-    w(`CH340: main() FAILED: ${err?.message || err}`);
-    // Cleanup so a retry starts fresh
-    try { await transport?.disconnect?.(); } catch {}
-    try { await port?.close?.(); } catch {}
-    return false;
-  }
-}
-
-
-// Minimal, single-pass CH340 connect + stub + probe @115200
-// Mapping used here (SparkFun CH340 on Windows, based on your observations):
-//   RTS -> BOOT (GPIO0, active-LOW)   DTR -> EN (reset, active-LOW)
-async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
-  try {
-    // Ensure native port starts closed
-    try { await port.close(); } catch {}
-
-    // --- Pre-boot using native setSignals() (always set BOTH DTR/RTS) ---
-    w('CH340: pre-boot -> port.open() …');
-    await port.open({ baudRate: baud });
-    w('CH340: port.open() OK');
-
-    // 0) Neutral: EN=HIGH (DTR=false), BOOT=HIGH (RTS=false)
-    w('CH340: Neutral (EN=HIGH, BOOT=HIGH) hold 100ms');
-    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-    await sleep(100);
-
-    // 1) BOOT=LOW (RTS=true) – hold before touching EN
-    w('CH340: BOOT=LOW (RTS=true), EN=HIGH (DTR=false) hold 220ms');
-    await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-    await sleep(220);
-
-    // 2) EN=LOW (DTR=true) while BOOT stays LOW
-    w('CH340: EN=LOW (DTR=true), BOOT still LOW hold 350ms');
-    await port.setSignals({ dataTerminalReady: true, requestToSend: true });
-    await sleep(350);
-
-    // 3) EN=HIGH (DTR=false) — ROM samples IO0 here (still LOW)
-    w('CH340: EN=HIGH (DTR=false), BOOT still LOW (ROM samples now) hold 280ms');
-    await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-    await sleep(280);
-
-    // 4) BOOT=HIGH (RTS=false) — release after EN has cleanly risen
-    w('CH340: BOOT=HIGH (RTS=false) settle 140ms');
-    await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-    await sleep(140);
-
-    // Close native port before handing to esptool‑js
-    try { await port.close(); w('CH340: port.close() OK'); } catch (e) {
-      w(`CH340: port.close() err: ${e?.message || e}`);
-    }
-
-    // --- esptool-js connect on a fresh Transport/Loader ---
-    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
-    loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
-
-    w('CONNECT(CH340): Calling ESPLoader.connect() …');
-    await loader.connect();
-    w('CONNECT(CH340): SUCCESS');
-
-    // *** Key differences vs previous run ***
-    // (A) Brief settle after connect, still @115200
-    await sleep(120);
-
-    // (B) Upload stub BEFORE probing flash, still @115200
-    try {
-      w('STUB(CH340): Uploading/running stub …');
-      await (typeof loader.runStub === 'function' ? loader.runStub() : loader.loadStub());
-      w('STUB(CH340): Stub running (@115200).');
-    } catch (e) {
-      w(`STUB(CH340): Stub load FAILED (continuing): ${e?.message || e}`);
-      // Continue anyway; ROM may still answer flashId
-    }
-
-    // (C) Probe AFTER stub, still @115200
-    try {
-      w('PROBE(CH340): flashId() …');
-      const id = await loader.flashId();   // stay @115200 for CH340
-      const man = (id >> 16) & 0xff, dev = id & 0xffff;
-      w(`PROBE(CH340): JEDEC -> Manufacturer=0x${man.toString(16)} Device=0x${dev.toString(16)}`);
-    } catch (e) {
-      w(`PROBE(CH340): flashId FAILED (continuing): ${e?.message || e}`);
-    }
-
-    // Optional: detect size (still at 115200)
-    if (typeof loader.detectFlashSize === 'function') {
-      try {
-        w('PROBE(CH340): detectFlashSize() …');
-        const sizeStr = await loader.detectFlashSize();
-        w(`PROBE(CH340): size -> ${sizeStr}`);
-      } catch (e) {
-        w(`PROBE(CH340): detectFlashSize FAILED (continuing): ${e?.message || e}`);
-      }
-    }
-
-    return true;
-
-  } catch (err) {
-    w(`CONNECT(CH340): FAILED: ${err?.message || err}`);
-    try { await transport?.disconnect?.(); } catch {}
-    try { await port?.close?.(); } catch {}
-    return false;
-  }
-}
 
     // ---------- Disconnect ----------
 //btnDisconnect.onclick = safeDisconnect;
