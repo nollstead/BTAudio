@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v13</h1>
+  <h1>BTAudio – Minimal Flash Test v14</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -185,13 +185,12 @@ btnConnect.onclick = async () => {
 };
 
 
-// Minimal CH340 connect (no native port.open/close; uses transport.setDTR/RTS if needed)
-// Mapping used here (typical for CH340 on Windows):
-//   RTS -> BOOT (GPIO0, active-LOW)
-//   DTR -> EN   (reset,  active-LOW)
+
+// Minimal CH340 connect (one fallback) – uses transport pulse, then closes and recreates before retry.
+// CH340 mapping used here (common on Windows): RTS -> BOOT (GPIO0, active-LOW), DTR -> EN (reset, active-LOW)
 async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
   try {
-    // 1) Build transport/loader and let esptool-js try normally
+    // Build transport/loader and let esptool-js try normally (Attempt 1)
     transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
     loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
 
@@ -204,14 +203,13 @@ async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
       w(`CONNECT(CH340): attempt 1 FAILED: ${e1?.message||e1}`);
     }
 
-    // 2) Attempt 2: explicit pulse using transport.setDTR/RTS (no native port.open())
-    // Goal: IO0 (BOOT) low at EN rising edge.
-    const bootHoldBefore = 180;   // ms BOOT low before touching EN
-    const enLow          = 300;   // ms EN low
-    const bootHoldAfter  = 220;   // ms keep BOOT low after EN rises
-    const settle         = 100;   // ms final settle
+    // ----- Transport-level pulse while the port is still open -----
+    const bootHoldBefore = 180;  // ms BOOT low before touching EN
+    const enLow          = 300;  // ms EN low (reset)
+    const bootHoldAfter  = 220;  // ms keep BOOT low after EN rises
+    const settle         = 100;  // ms final settle
 
-    // Make sure both lines are idle-high first (DTR=false -> EN high, RTS=false -> BOOT high)
+    // Neutral first: EN=HIGH (DTR=false), BOOT=HIGH (RTS=false)
     w('CH340: neutralize via transport (EN=HIGH, BOOT=HIGH)');
     try { await transport.setDTR(false); } catch {}
     try { await transport.setRTS(false); } catch {}
@@ -232,12 +230,25 @@ async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
     await transport.setDTR(false);
     await sleep(bootHoldAfter);
 
-    // BOOT = HIGH (RTS=false) — release after EN has risen
+    // BOOT = HIGH (RTS=false)
     w(`CH340: BOOT=HIGH (RTS=false) settle ${settle}ms`);
     await transport.setRTS(false);
     await sleep(settle);
 
-    // Try connect again
+    // ----- CRUCIAL: close the port before trying connect() again -----
+    w('CH340: closing transport before retry …');
+    try { await transport.disconnect(); w('CH340: transport.disconnect() OK'); } catch(e) { w(`CH340: transport.disconnect() err: ${e?.message||e}`); }
+    // (If the browser still thinks it’s open, try a native close as a fallback)
+    try {
+      const stillOpen = !!(port && (port.readable || port.writable));
+      if (stillOpen) { await port.close(); w('CH340: port.close() OK'); }
+    } catch(e) { w(`CH340: port.close() err: ${e?.message||e}`); }
+    await sleep(50);
+
+    // Rebuild Transport/Loader on a closed port, then retry connect (Attempt 2)
+    transport = new Transport(port, /*tracing*/ false, /*enableSlipReader*/ false);
+    loader    = new ESPLoader({ transport, baudrate: baud, terminal: term });
+
     w('CONNECT(CH340): Attempt 2 – ESPLoader.connect() after transport pulse …');
     await loader.connect();
     w('CONNECT(CH340): SUCCESS (attempt 2)');
@@ -245,12 +256,13 @@ async function connectCH340(port, { baud = OPEN_BAUD } = {}) {
 
   } catch (err) {
     w(`CONNECT(CH340): FAILED: ${err?.message || err}`);
-    // leave things sane for a retry
+    // Leave things sane for a manual retry
     try { await transport?.disconnect?.(); } catch {}
     try { await port?.close?.(); } catch {}
     return false;
   }
 }
+
 
     // ---------- Disconnect ----------
 //btnDisconnect.onclick = safeDisconnect;
