@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>BTAudio – Minimal Flash Test</title>
+  <title>BTAudio Connect Test</title>
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
     *{box-sizing:border-box}
@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>BTAudio – Minimal Flash Test v37</h1>
+  <h1>BTAudio Connect Test</h1>
   <p class="muted">Only what we need: <strong>Connect</strong> → <strong>Flash</strong>. Extra logging everywhere.</p>
 
   <div class="panel">
@@ -40,13 +40,6 @@
 
   <!-- esptool-js -->
   <script type="module">
-    /********************************************************************
-     * Minimal Flash Test
-     * - Connect: let esptool-js own auto-reset and sync
-     * - Flash: erase (optional) -> writeFlash -> flashFinish(true)
-     * - No manual DTR/RTS or mapping logic
-     ********************************************************************/
-
     import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
     const { ESPLoader, Transport } = esptool;
 
