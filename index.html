@@ -19,7 +19,7 @@
     button:hover:not([disabled]){background:var(--accent2)}
     textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
     label{color:var(--muted)}
-
+    .page-version {text-align: right;margin-top: 6px;font-size: 0.85rem;opacity: 0.6;}
     
     /* Clear log button (subtle, small, right-aligned) */
     .log-actions{
@@ -55,8 +55,6 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=15</p>
-
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>Connect</button>
@@ -64,28 +62,27 @@
       <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
 
-<!-- Version picker (manifest-driven) -->
-<div class="row" style="align-items:flex-start">
-  <div class="fw-label-row">
-    <label>Firmware Version</label>
-  </div>
-
-  <div id="fwList" class="fw-list">
-    <div class="fw-item"><em class="muted">Loading versions…</em></div>
-  </div>
-</div>
+    <!-- Version picker (manifest-driven) -->
+    <div class="row" style="align-items:flex-start">
+      <div class="fw-label-row">
+        <label>Select Firmware</label>
+      </div>
+    
+      <div id="fwList" class="fw-list">
+        <div class="fw-item"><em class="muted">Loading versions…</em></div>
+      </div>
+    </div>
 
     <div class="instructions">
       <h3>Instructions</h3>
       <ol>
         <li>Connect your BTAudio device to your computer via USB.</li>
-        <li>Click <strong>Connect</strong> above and when prompted select the serial port (e.g., “USB‑SERIAL”).</li>
+        <li>Click <strong>Connect</strong> above and when prompted select its serial port.</li>
         <li>Click <strong>Upload</strong> and wait for completion.</li>
         <li>Your device will restart automatically once the upload is complete</li>
       </ol>
     </div>
   </div>
-
 
 <div class="panel">
   <h3>Log</h3>
@@ -94,7 +91,7 @@
     <button id="btnClearLog" class="clear-btn" disabled>Clear log</button>
   </div>
 </div>
-
+<p class="page-version muted">v=16</p>
 
 <script type="module">
   /********************************************************************
@@ -232,7 +229,7 @@
 
     // Keep Upload disabled until Connect succeeds
     flashBtn.disabled = true;
-    w('ready');
+    w('Ready, select firmware and click Connect to continue');
   }
 
   loadManifest().catch(e => {
@@ -285,9 +282,9 @@ connectBtn.onclick = async () => {
     const productId = info.usbProductId || 0;
 
     //w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
-    w(`Connected to serial port:  `);
+    w(`Connected to serial port, choose firmware then click Upload`);
     
-    w(`   port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
+    //w(`   port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
 
     //w('CONNECT: Creating Transport …');
     transport = new Transport(port, false, false);
@@ -299,9 +296,9 @@ connectBtn.onclick = async () => {
     connected = true;
     chipDesc = await loader.main();
 
-    w(`   Chip description: ${chipDesc}`);
+    //w(`   Chip description: ${chipDesc}`);
     chip = loader.chip?.CHIP_NAME ?? 'unknown';
-    w(`   Chip family: ${chip}`);
+    //w(`   Chip family: ${chip}`);
 
     //w('CONNECT: Probing flash ID …');
     await loader.flashId();
@@ -443,7 +440,7 @@ flashBtn.onclick = async () => {
 
     try {
       await loader.flashFinish(true); // true => reset to run app
-      //w('FLASH: flashFinish(true) OK');
+    w('Done');
     } catch (e) {
       w(`FLASH: flashFinish(true) err: ${e?.message || e}`);
     }
