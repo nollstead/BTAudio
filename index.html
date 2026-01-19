@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=2</p>
+  <p class="muted">v=3</p>
 
   <div class="panel">
     <div class="row">
@@ -213,8 +213,8 @@
 
 
 // ---------- Connect ----------
-btnConnect.onclick = async () => {
-  btnConnect.disabled = true;
+connectBtn.onclick = async () => {
+  connectBtn.disabled = true;
   try {
     if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
     w(`ENV: UA=${navigator.userAgent}`);
@@ -236,18 +236,18 @@ btnConnect.onclick = async () => {
     w(`Chip: ${chip}`);
     await loader.flashId();
     w('after esploader.flashId')          
-    btnDisconnect.disabled = !connected;        
+    disconnectBtn.disabled = !connected;        
   } catch (e) {
     w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
     try { await port?.close?.(); } catch {}
-    btnConnect.disabled = false;
+    connectBtn.disabled = false;
   }
 };
 
     
 
 // ---------- Disconnect (Launchpad-style reset via DTR pulse) ----------
-btnDisconnect.onclick = async () => {
+disconnectBtn.onclick = async () => {
   w('DISCONNECT: Begin (Launchpad-style DTR reset) …');
 
   // tiny inline nap so we don't add helpers
@@ -290,8 +290,8 @@ btnDisconnect.onclick = async () => {
     // 3) Reset state / UI exactly like your connect handler expects.
     port = transport = loader = null;
     connected = false;
-    btnConnect.disabled = false;
-    btnDisconnect.disabled = true;
+    connectBtn.disabled = false;
+    disconnectBtn.disabled = true;
     w('DISCONNECT: Completed.');
   }
 };
