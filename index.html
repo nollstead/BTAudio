@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -33,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">V=7</p>
+  <p class="muted">v=1</p>
 
   <div class="panel">
     <div class="row">
@@ -72,12 +73,11 @@
 
 <script type="module">
   /********************************************************************
-   * BTAudio Firmware Update – v6 (LyraT/CP2102N + SparkFun/CH340 test)
-   * Stock esptool-js flow with explicit control-line handling and
-   * DETAILED DIAGNOSTIC LOGGING at each step.
+   * BTAudio Firmware Update – minimal index (manifest + connect shell)
    ********************************************************************/
 
-  import * as esptool from 'https://unpkg.com/esptool-js@0.5.7/bundle.js';
+  // Use the same version as test.html for identical behavior
+  import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
   const { ESPLoader, Transport } = esptool;
 
   // ---------- Logging ----------
@@ -94,14 +94,16 @@
 
   // ---------- State & constants ----------
   let port=null, transport=null, loader=null, connected=false, stubReady=false;
-  const OPEN_BAUD = 115200;     // open at 115200, then bump to 921600 after stub
-  const FAST_BAUD = 921600;
+  const OPEN_BAUD = 115200; // (FAST_BAUD not used yet; we’ll add when flashing is wired)
   const FILTERS = [
-    { usbVendorId: 0x10c4 },                      // CP210x (LyraT)
-    { usbVendorId: 0x1a86, usbProductId: 0x7523 } // CH340C (SparkFun)
+    { usbVendorId: 0x10c4 },                               // CP210x (LyraT)
+    { usbVendorId: 0x1a86, usbProductId: 0x7523 },         // CH340C/G (SparkFun)
+    { usbVendorId: 0x1a86, usbProductId: 0x5523 }          // CH340 alt PID (common on some clones)
   ];
   const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
-  let __connecting = false; // re-entrancy guard
+
+  // Enable Connect when ESPLoader is present (matches test.html behavior)
+  connectBtn.disabled = !(Transport && ESPLoader);
 
   // ---------- Manifest-driven picker ----------
   let manifest=null, selectedBuild=null;
@@ -179,6 +181,9 @@
     selectedBuild = null;
     renderFwList(data.builds);
     w(`Manifest: loaded ${data.builds.length} build(s); newest = ${data.builds[0]?.version||'n/a'}`);
+
+    // Keep Upload disabled until Connect succeeds
+    flashBtn.disabled = true;
   }
 
   loadManifest().catch(e => {
@@ -201,6 +206,9 @@
                      </div>`;
     fwList.appendChild(div);
     w(`Manifest: load failed (${e?.message||e}). Using fallback image.`);
+
+    // Keep Upload disabled until Connect succeeds
+    flashBtn.disabled = true;
   });
 </script>
 </body>
