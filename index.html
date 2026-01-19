@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=3</p>
+  <p class="muted">v=4</p>
 
   <div class="panel">
     <div class="row">
@@ -100,6 +100,8 @@
     { usbVendorId: 0x1a86, usbProductId: 0x7523 },         // CH340C/G (SparkFun)
     { usbVendorId: 0x1a86, usbProductId: 0x5523 }          // CH340 alt PID (common on some clones)
   ];
+  let chip = "default";
+  let chipDesc = "default";
   const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
   // Enable Connect when ESPLoader is present (matches test.html behavior)
