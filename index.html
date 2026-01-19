@@ -20,6 +20,27 @@
     textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
     label{color:var(--muted)}
 
+    
+    /* Clear log button (subtle, small, right-aligned) */
+    .log-actions{
+      display:flex;
+      justify-content:flex-end;
+      margin-top:8px;
+    }
+    .clear-btn{
+      background:transparent;
+      color:var(--muted);
+      border:1px solid var(--border);
+      padding:6px 10px;
+      border-radius:6px;
+      font-weight:500;
+      font-size:.9rem;
+    }
+    .clear-btn:hover:not([disabled]){
+      background:#1a1a1a;
+      color:#e0e0e0;
+    }
+
     /* Version picker styles */
     .fw-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
     .fw-item{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border);border-radius:10px;background:#141414}
@@ -34,7 +55,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=12</p>
+  <p class="muted">v=13</p>
 
   <div class="panel">
     <div class="row">
@@ -65,10 +86,15 @@
     </div>
   </div>
 
-  <div class="panel">
-    <h3>Log</h3>
-    <textarea id="log" readonly></textarea>
+
+<div class="panel">
+  <h3>Log</h3>
+  <textarea id="log" readonly></textarea>
+  <div class="log-actions">
+    <button id="btnClearLog" class="clear-btn" disabled>Clear log</button>
   </div>
+</div>
+
 
 <script type="module">
   /********************************************************************
@@ -82,7 +108,11 @@
   // ---------- Logging ----------
   const logEl = document.getElementById('log');
   function ts() { return new Date().toLocaleTimeString(); }
-  function w(s){ logEl.value += `[${ts()}] ${s}\n`; logEl.scrollTop = logEl.scrollHeight; }
+  function w(s){
+    logEl.value += `[${ts()}] ${s}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+    if (btnClearLog.disabled && logEl.value.length) btnClearLog.disabled = false;
+  }
   const term = {
     clean(){},
     writeLine(_s){},
@@ -94,7 +124,8 @@
   const flashBtn   = document.getElementById('flashBtn');
   const disconnectBtn = document.getElementById('disconnectBtn');
   const fwList     = document.getElementById('fwList');
-
+  const btnClearLog = document.getElementById('btnClearLog');
+  
   // ---------- State & constants ----------
   let port=null, transport=null, loader=null, connected=false, stubReady=false;
   const OPEN_BAUD = 115200; // (FAST_BAUD not used yet; we’ll add when flashing is wired)
@@ -308,19 +339,19 @@ async function rebootAndDisconnect() {
 
     w(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
     await port.open({ baudRate: OPEN_BAUD });
-    w('DISCONNECT: port.open() OK');
+    //w('DISCONNECT: port.open() OK');
 
-    w('DISCONNECT: DTR=true (EN LOW/reset) …');
+    //w('DISCONNECT: DTR=true (EN LOW/reset) …');
     await port.setSignals({ dataTerminalReady: true });
     await nap(120);
 
-    w('DISCONNECT: DTR=false (EN HIGH -> run app) …');
+    //w('DISCONNECT: DTR=false (EN HIGH -> run app) …');
     await port.setSignals({ dataTerminalReady: false });
     await nap(120);
 
-    w('DISCONNECT: port.close() …');
+    //w('DISCONNECT: port.close() …');
     await port.close();
-    w('DISCONNECT: port.close() OK');
+    //w('DISCONNECT: port.close() OK');
   } catch (e) {
     w(`DISCONNECT: Error: ${e?.message || e}`);
   } finally {
@@ -333,56 +364,6 @@ async function rebootAndDisconnect() {
     w('DISCONNECT: Completed.');
   }
 }
-  
-// ---------- Disconnect (Launchpad-style reset via DTR pulse) ----------
-/*
-disconnectBtn.onclick = async () => {
-  const nap = (ms) => new Promise(r => setTimeout(r, ms));
-
-  try {
-    if (transport) {
-      w('DISCONNECT: transport.disconnect() …');
-      try {
-        await transport.disconnect();
-        w('DISCONNECT: transport.disconnect() OK');
-      } catch (e) {
-        w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
-      }
-    } else {
-      w('DISCONNECT: No active transport (native path will still reset).');
-    }
-
-    w('DISCONNECT: Ensuring native port is closed before pulse …');
-    try { await port?.close?.(); } catch {}
-
-    w(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
-    await port.open({ baudRate: OPEN_BAUD });
-    w('DISCONNECT: port.open() OK');
-
-    w('DISCONNECT: DTR=true (EN LOW/reset) …');
-    await port.setSignals({ dataTerminalReady: true });
-    await nap(120);
-
-    w('DISCONNECT: DTR=false (EN HIGH -> run app) …');
-    await port.setSignals({ dataTerminalReady: false });
-    await nap(120);
-
-    w('DISCONNECT: port.close() …');
-    await port.close();
-    w('DISCONNECT: port.close() OK');
-  } catch (e) {
-    w(`DISCONNECT: Error: ${e?.message || e}`);
-  } finally {
-    w('DISCONNECT: Reset local state, re-enable Connect');
-    port = transport = loader = null;
-    connected = false;
-    connectBtn.disabled = false;
-    flashBtn.disabled = true;
-    disconnectBtn.disabled = true;
-    w('DISCONNECT: Completed.');
-  }
-};
-*/
   
 // ---------- Upload (Flash) ----------
 flashBtn.onclick = async () => {
@@ -447,12 +428,11 @@ flashBtn.onclick = async () => {
       compress: true,
       reportProgress
     });
-    w('FLASH: Write complete.');
+    w('Upload complete, finalizing and rebooting');
 
-    w('FLASH: Finalizing & rebooting …');
     try {
       await loader.flashFinish(true); // true => reset to run app
-      w('FLASH: flashFinish(true) OK');
+      //w('FLASH: flashFinish(true) OK');
     } catch (e) {
       w(`FLASH: flashFinish(true) err: ${e?.message || e}`);
     }
@@ -467,6 +447,14 @@ flashBtn.onclick = async () => {
     flashBtn.disabled = false; // leave connected so user may flash again or disconnect
   }
 };
+  
+btnClearLog.onclick = () => {
+  logEl.value = '';
+  btnClearLog.disabled = true;
+  // Optional: keep focus on the page or move back to Connect
+  // connectBtn.focus();
+};
+
 </script>
 </body>
 </html>
