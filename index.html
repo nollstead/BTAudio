@@ -20,6 +20,13 @@
     textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
     label{color:var(--muted)}
     .page-version {text-align: right;margin-top: 6px;font-size: 0.85rem;opacity: 0.6;}
+    .verbose-toggle{
+      margin-left:auto;           /* push to right edge */
+      display:flex; align-items:center;
+      gap:6px; color:var(--muted);
+      font-size:.9rem;
+    }
+    .verbose-toggle input{ transform: scale(1.05); }
     
     /* Clear log button (subtle, small, right-aligned) */
     .log-actions{
@@ -91,13 +98,16 @@
     <button id="btnClearLog" class="clear-btn" disabled>Clear log</button>
   </div>
 </div>
-<p class="page-version muted">v=16</p>
+<div class="log-actions">
+  <button id="btnClearLog" class="clear-btn" disabled>Clear log</button>
+  <label class="verbose-toggle">
+    <input type="checkbox" id="chkVerbose">
+    Verbose logging
+  </label>
+</div>  
+<p class="page-version muted">v=17</p>
 
 <script type="module">
-  /********************************************************************
-   * BTAudio Firmware Update – minimal index (manifest + connect shell)
-   ********************************************************************/
-
   // Use the same version as test.html for identical behavior
   import * as esptool from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
   const { ESPLoader, Transport } = esptool;
@@ -105,16 +115,43 @@
   // ---------- Logging ----------
   const logEl = document.getElementById('log');
   function ts() { return new Date().toLocaleTimeString(); }
-  function w(s){
-    logEl.value += `[${ts()}] ${s}\n`;
-    logEl.scrollTop = logEl.scrollHeight;
-    if (btnClearLog.disabled && logEl.value.length) btnClearLog.disabled = false;
-  }
+  //function w(s){
+  //  logEl.value += `[${ts()}] ${s}\n`;
+  //  logEl.scrollTop = logEl.scrollHeight;
+  //  if (btnClearLog.disabled && logEl.value.length) btnClearLog.disabled = false;
+  //}
   const term = {
     clean(){},
     writeLine(_s){},
     write(_s){}
   };
+
+  // Verbose flag (persisted)
+  const chkVerbose = document.getElementById('chkVerbose');
+  let VERBOSE = (localStorage.getItem('bt_verbose') === '1');
+  
+  // Initialize checkbox from saved value
+  chkVerbose.checked = VERBOSE;
+  
+  // Toggle handler + persistence
+  chkVerbose.addEventListener('change', () => {
+    VERBOSE = chkVerbose.checked;
+    localStorage.setItem('bt_verbose', VERBOSE ? '1' : '0');
+    w(`LOG: Verbose ${VERBOSE ? 'ON' : 'OFF'}`);
+  });
+  
+  // Always log
+  function w(s){
+    logEl.value += `[${ts()}] ${s}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+    if (btnClearLog.disabled && logEl.value.length) btnClearLog.disabled = false;
+  }
+  
+  // Verbose-only log
+  function wv(s){
+    if (!VERBOSE) return;
+    w(s);
+  }
 
   // ---------- DOM ----------
   const connectBtn = document.getElementById('connectBtn');
@@ -175,7 +212,7 @@
       radio.checked = (selectedBuild && selectedBuild.version === b.version) || (!selectedBuild && idx===0);
       radio.addEventListener('change', () => { 
         selectedBuild = b; 
-        //w(`Uploading ${b.version} (${b.date||'no date'})`); 
+        wv(`Uploading ${b.version} (${b.date||'no date'})`); 
       });
 
       const meta = document.createElement('div');
@@ -211,9 +248,9 @@
 
   async function loadManifest() {
 
-    //w(`Manifest: fetching ${MANIFEST_URL} …`);
+    wv(`Manifest: fetching ${MANIFEST_URL} …`);
     const resp = await fetch(MANIFEST_URL, { cache: 'no-cache' });
-    //w(`Manifest: HTTP status ${resp.status}`);
+    wv(`Manifest: HTTP status ${resp.status}`);
     if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
     const data = await resp.json();
     if (!Array.isArray(data.builds)) throw new Error('manifest: builds missing');
@@ -225,7 +262,7 @@
     manifest = data;
     selectedBuild = null;
     renderFwList(data.builds);
-    //w(`Manifest: loaded ${data.builds.length} build(s); newest = ${data.builds[0]?.version||'n/a'}`);
+    wv(`Manifest: loaded ${data.builds.length} build(s); newest = ${data.builds[0]?.version||'n/a'}`);
 
     // Keep Upload disabled until Connect succeeds
     flashBtn.disabled = true;
@@ -273,38 +310,38 @@ connectBtn.onclick = async () => {
   connectBtn.disabled = true;
   try {
     if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
-    //w(`ENV: UA=${navigator.userAgent}`);
+    wv(`ENV: UA=${navigator.userAgent}`);
 
-    //w('CONNECT: Requesting serial port  …');
+    wv('CONNECT: Requesting serial port  …');
     port = await navigator.serial.requestPort({ filters: FILTERS });
     const info = port.getInfo?.()||{};
     const vendorId  = info.usbVendorId  || 0;
     const productId = info.usbProductId || 0;
 
-    //w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
+    wv(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
     w(`Connected to serial port, choose firmware then click Upload`);
     
-    //w(`   port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
+    wv(`   port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
 
-    //w('CONNECT: Creating Transport …');
+    wv('CONNECT: Creating Transport …');
     transport = new Transport(port, false, false);
 
-    //w(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
+    wv(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
     loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term, debugLogging: false });
 
-    //w('CONNECT: Calling loader.main() (auto-reset, ROM sync, stub upload, detect) …');
+    wv('CONNECT: Calling loader.main() (auto-reset, ROM sync, stub upload, detect) …');
     connected = true;
     chipDesc = await loader.main();
 
-    //w(`   Chip description: ${chipDesc}`);
+    wv(`   Chip description: ${chipDesc}`);
     chip = loader.chip?.CHIP_NAME ?? 'unknown';
-    //w(`   Chip family: ${chip}`);
+    wv(`   Chip family: ${chip}`);
 
-    //w('CONNECT: Probing flash ID …');
+    wv('CONNECT: Probing flash ID …');
     await loader.flashId();
-    //w('CONNECT: flashId() complete');
+    wv('CONNECT: flashId() complete');
 
-    //w('CONNECT: Success; enabling Upload and Disconnect');
+    wv('CONNECT: Success; enabling Upload and Disconnect');
     flashBtn.disabled = false;
     disconnectBtn.disabled = false;
 
@@ -331,10 +368,10 @@ async function rebootAndDisconnect() {
 
   try {
     if (transport) {
-      //w('DISCONNECT: transport.disconnect() …');
+      wv('DISCONNECT: transport.disconnect() …');
       try {
         await transport.disconnect();
-        //w('DISCONNECT: transport.disconnect() OK');
+        wv('DISCONNECT: transport.disconnect() OK');
       } catch (e) {
         w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
       }
@@ -342,34 +379,34 @@ async function rebootAndDisconnect() {
       w('DISCONNECT: No active transport (native path will still reset).');
     }
 
-    //w('DISCONNECT: Ensuring native port is closed before pulse …');
+    wv('DISCONNECT: Ensuring native port is closed before pulse …');
     try { await port?.close?.(); } catch {}
 
-    //w(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
+    wv(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
     await port.open({ baudRate: OPEN_BAUD });
-    //w('DISCONNECT: port.open() OK');
+    wv('DISCONNECT: port.open() OK');
 
-    //w('DISCONNECT: DTR=true (EN LOW/reset) …');
+    wv('DISCONNECT: DTR=true (EN LOW/reset) …');
     await port.setSignals({ dataTerminalReady: true });
     await nap(120);
 
-    //w('DISCONNECT: DTR=false (EN HIGH -> run app) …');
+    wv('DISCONNECT: DTR=false (EN HIGH -> run app) …');
     await port.setSignals({ dataTerminalReady: false });
     await nap(120);
 
-    //w('DISCONNECT: port.close() …');
+    wv('DISCONNECT: port.close() …');
     await port.close();
-    //w('DISCONNECT: port.close() OK');
+    wv('DISCONNECT: port.close() OK');
   } catch (e) {
     w(`DISCONNECT: Error: ${e?.message || e}`);
   } finally {
-    //w('DISCONNECT: Reset local state, re-enable Connect');
+    wv('DISCONNECT: Reset local state, re-enable Connect');
     port = transport = loader = null;
     connected = false;
     connectBtn.disabled = false;
     flashBtn.disabled = true;
     disconnectBtn.disabled = true;
-    //w('DISCONNECT: Completed.');
+    wv('DISCONNECT: Completed.');
   }
 }
   
@@ -384,7 +421,7 @@ flashBtn.onclick = async () => {
       ? selectedBuild.parts
       : [{ path: 'webflash/BTAudio.bin', offset: 0 }];
 
-    //w(`FLASH: Preparing ${parts.length} part(s) …`);
+    wv(`FLASH: Preparing ${parts.length} part(s) …`);
 
     const fileArray = [];
     let totalBytes = 0;
@@ -402,7 +439,7 @@ flashBtn.onclick = async () => {
         url = new URL(p.path, MANIFEST_BASE).href;
       }
 
-      //w(`FLASH: Fetching ${url}`);
+      wv(`FLASH: Fetching ${url}`);
       const resp = await fetch(url, { cache: 'no-cache' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
 
@@ -414,10 +451,10 @@ flashBtn.onclick = async () => {
         (typeof p.offset === 'number' ? p.offset : parseInt(p.offset || 0, 10));
 
       fileArray.push({ address, data: u8ToBinaryString(u8) });
-      //w(`FLASH: queued ${u8.length} bytes @ 0x${address.toString(16)}`);
+      wv(`FLASH: queued ${u8.length} bytes @ 0x${address.toString(16)}`);
     }
 
-    //w(`FLASH: Begin write (${parts.length} part(s), total ~${totalBytes} bytes, compressed) …`);
+    wv(`FLASH: Begin write (${parts.length} part(s), total ~${totalBytes} bytes, compressed) …`);
 
     let lastPct = -1;
     const reportProgress = (_idx, written, total) => {
@@ -446,7 +483,7 @@ flashBtn.onclick = async () => {
     }
 
     await sleep(150);
-    //w('DONE: Upload finished. Device should reboot into the new firmware.');
+    wv('DONE: Upload finished. Device should reboot into the new firmware.');
     // Automatically reset & close the port (same behavior as clicking Disconnect)
     await rebootAndDisconnect();
   } catch (e) {
