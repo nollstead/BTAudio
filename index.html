@@ -314,7 +314,7 @@ connectBtn.onclick = async () => {
 } catch (e) {
   if (e && e.name === 'NotFoundError') {
     // User clicked "Cancel" in the port picker -> no log, just restore UI
-    connec-tBtn.disabled = false;
+    connectBtn.disabled = false;
   } else {
     // All real errors still go through your logger
     w(`CONNECT: FAILED: ${e?.name ? e.name + ': ' : ''}${e?.message || e}`);
