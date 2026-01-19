@@ -55,7 +55,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=14</p>
+  <p class="muted">v=15</p>
 
   <div class="panel">
     <div class="row">
@@ -278,13 +278,16 @@ connectBtn.onclick = async () => {
     if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
     //w(`ENV: UA=${navigator.userAgent}`);
 
-    w('CONNECT: Requesting serial port  …');
+    //w('CONNECT: Requesting serial port  …');
     port = await navigator.serial.requestPort({ filters: FILTERS });
     const info = port.getInfo?.()||{};
     const vendorId  = info.usbVendorId  || 0;
     const productId = info.usbProductId || 0;
 
-    w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
+    //w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
+    w(`Connected to serial port:  `);
+    
+    w(`   port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
 
     //w('CONNECT: Creating Transport …');
     transport = new Transport(port, false, false);
@@ -296,9 +299,9 @@ connectBtn.onclick = async () => {
     connected = true;
     chipDesc = await loader.main();
 
-    w(`Chip description: ${chipDesc}`);
+    w(`   Chip description: ${chipDesc}`);
     chip = loader.chip?.CHIP_NAME ?? 'unknown';
-    w(`Chip family: ${chip}`);
+    w(`   Chip family: ${chip}`);
 
     //w('CONNECT: Probing flash ID …');
     await loader.flashId();
@@ -307,12 +310,20 @@ connectBtn.onclick = async () => {
     //w('CONNECT: Success; enabling Upload and Disconnect');
     flashBtn.disabled = false;
     disconnectBtn.disabled = false;
-  } catch (e) {
-    w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
+
+} catch (e) {
+  if (e && e.name === 'NotFoundError') {
+    // User clicked "Cancel" in the port picker -> no log, just restore UI
+    connec-tBtn.disabled = false;
+  } else {
+    // All real errors still go through your logger
+    w(`CONNECT: FAILED: ${e?.name ? e.name + ': ' : ''}${e?.message || e}`);
     try { await port?.close?.(); } catch {}
-    transport = loader = null; // cleanup refs (no behavior change to IO)
+    transport = loader = null;  // reset state
     connectBtn.disabled = false;
   }
+}
+
 };
 
 disconnectBtn.onclick = rebootAndDisconnect;
