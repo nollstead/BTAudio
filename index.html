@@ -1,4 +1,5 @@
 
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -8,26 +9,98 @@
   <style>
     :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
     *{box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:48px auto;padding:20px;background:var(--bg);color:var(--text);line-height:1.6}
-    h1{margin:0 0 8px}.muted{color:var(--muted)}
-    .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 0 20px rgba(0,0,0,.35)}
-    .row{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;align-items:center}
-    .fw-label-row {flex-basis: 100%; margin-bottom: 6px;}
-    .instructions{background:#1e1e1e;border-radius:14px;padding:18px;margin-top:10px}
-    button{background:var(--accent);color:#fff;border:none;padding:12px 18px;border-radius:10px;font-weight:600;cursor:pointer}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      max-width:780px;
+      margin:48px auto;
+      padding:20px;
+      background:var(--bg);
+      color:var(--text);
+      line-height:1.6
+    }
+    h1{margin:0 0 8px}
+    .muted{color:var(--muted)}
+
+    .panel{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:20px;
+      margin:18px 0;
+      box-shadow:0 0 20px rgba(0,0,0,.35)
+    }
+
+    .row{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      margin:16px 0;
+      align-items:center
+    }
+
+    .fw-label-row{
+      flex-basis:100%;
+      margin-bottom:6px
+    }
+
+    .instructions{
+      background:#1e1e1e;
+      border-radius:14px;
+      padding:18px;
+      margin-top:10px
+    }
+
+    button{
+      background:var(--accent);
+      color:#fff;
+      border:none;
+      padding:12px 18px;
+      border-radius:10px;
+      font-weight:600;
+      cursor:pointer
+    }
     button[disabled]{opacity:.55;cursor:not-allowed}
     button:hover:not([disabled]){background:var(--accent2)}
-    textarea{width:100%;height:260px;border-radius:8px;border:1px solid var(--border);background:#0f0f0f;color:#cfe8ff;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
-    label{color:var(--muted)}
-    .page-version {text-align: right;margin-top: 6px;font-size: 0.85rem;opacity: 0.6;}
-    .verbose-toggle{
-      margin-left:auto;           /* push to right edge */
-      display:flex; align-items:center;
-      gap:6px; color:var(--muted);
-      font-size:.9rem;
+
+    textarea{
+      width:100%;
+      height:260px;
+      border-radius:8px;
+      border:1px solid var(--border);
+      background:#0f0f0f;
+      color:#cfe8ff;
+      padding:10px;
+      font-family:ui-monospace,Menlo,Consolas,monospace
     }
-    .verbose-toggle input{ transform: scale(1.05); }
-    
+
+    label{color:var(--muted)}
+
+    .page-version{
+      text-align:right;
+      margin-top:6px;
+      font-size:0.85rem;
+      opacity:0.6
+    }
+
+    /* --- Verbose toggle inside log header --- */
+    .log-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:8px;
+    }
+    .verbose-toggle{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      color:var(--muted);
+      font-size:.9rem;
+      user-select:none;
+    }
+    .verbose-toggle input{
+      transform:scale(1.05);
+    }
+
     /* Clear log button (subtle, small, right-aligned) */
     .log-actions{
       display:flex;
@@ -50,8 +123,20 @@
 
     /* Version picker styles */
     .fw-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
-    .fw-item{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border);border-radius:10px;background:#141414}
-    .fw-item input[type="radio"]{accent-color:#4CAF50;transform:scale(1.15);margin-top:2px}
+    .fw-item{
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+      padding:12px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:#141414
+    }
+    .fw-item input[type="radio"]{
+      accent-color:#4CAF50;
+      transform:scale(1.15);
+      margin-top:2px
+    }
     .fw-meta{display:flex;flex-direction:column;gap:2px}
     .fw-line{display:flex;gap:8px;flex-wrap:wrap}
     .fw-version{font-weight:700;color:#eaeaea}
@@ -60,8 +145,10 @@
     .fw-notes{color:#bbb;font-size:0.95em}
   </style>
 </head>
+
 <body>
   <h1>BTAudio Firmware Update</h1>
+
   <div class="panel">
     <div class="row">
       <button id="connectBtn" disabled>Connect</button>
@@ -69,12 +156,12 @@
       <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
 
-    <!-- Version picker (manifest-driven) -->
+    <!-- Version picker -->
     <div class="row" style="align-items:flex-start">
       <div class="fw-label-row">
         <label>Select Firmware</label>
       </div>
-    
+
       <div id="fwList" class="fw-list">
         <div class="fw-item"><em class="muted">Loading versions…</em></div>
       </div>
@@ -84,28 +171,31 @@
       <h3>Instructions</h3>
       <ol>
         <li>Connect your BTAudio device to your computer via USB.</li>
-        <li>Click <strong>Connect</strong> above and when prompted select its serial port.</li>
+        <li>Click <strong>Connect</strong> and choose its serial port.</li>
         <li>Click <strong>Upload</strong> and wait for completion.</li>
-        <li>Your device will restart automatically once the upload is complete</li>
+        <li>Your device will restart automatically after upload.</li>
       </ol>
     </div>
   </div>
 
-<div class="panel">
-  <h3>Log</h3>
-  <textarea id="log" readonly></textarea>
-  <div class="log-actions">
-    <button id="btnClearLog" class="clear-btn" disabled>Clear log</button>
+  <div class="panel">
+    <div class="log-header">
+      <h3>Log</h3>
+      <label class="verbose-toggle">
+        <input type="checkbox" id="chkVerbose">
+        Verbose logging
+      </label>
+    </div>
+
+    <textarea id="log" readonly></textarea>
+
+    <div class="log-actions">
+      <button id="btnClearLog" class="clear-btn" disabled>Clear log</button>
+    </div>
   </div>
-</div>
-<div class="log-actions">
-  <button id="btnClearLog" class="clear-btn" disabled>Clear log</button>
-  <label class="verbose-toggle">
-    <input type="checkbox" id="chkVerbose">
-    Verbose logging
-  </label>
-</div>  
-<p class="page-version muted">v=17</p>
+
+  <p class="page-version muted">v=17</p>
+
 
 <script type="module">
   // Use the same version as test.html for identical behavior
