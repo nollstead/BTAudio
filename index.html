@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=7</p>
+  <p class="muted">v=8</p>
 
   <div class="panel">
     <div class="row">
@@ -232,6 +232,53 @@ function u8ToBinaryString(u8) {
   return s;
 }
 
+
+// ---------- Connect ----------
+connectBtn.onclick = async () => {
+  w('CONNECT: Click');
+  connectBtn.disabled = true;
+  try {
+    if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
+    w(`ENV: UA=${navigator.userAgent}`);
+
+    w('CONNECT: Requesting serial port (with filters) …');
+    port = await navigator.serial.requestPort({ filters: FILTERS });
+    const info = port.getInfo?.()||{};
+    const vendorId  = info.usbVendorId  || 0;
+    const productId = info.usbProductId || 0;
+
+    w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
+
+    w('CONNECT: Creating Transport …');
+    transport = new Transport(port, false, false);
+
+    w(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
+    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term, debugLogging: false });
+
+    w('CONNECT: Calling loader.main() (auto-reset, ROM sync, stub upload, detect) …');
+    connected = true;
+    chipDesc = await loader.main();
+
+    w(`CONNECT: Chip description: ${chipDesc}`);
+    chip = loader.chip?.CHIP_NAME ?? 'unknown';
+    w(`CONNECT: Chip family: ${chip}`);
+
+    w('CONNECT: Probing flash ID …');
+    await loader.flashId();
+    w('CONNECT: flashId() complete');
+
+    w('CONNECT: Success; enabling Upload and Disconnect');
+    flashBtn.disabled = false;
+    disconnectBtn.disabled = false;
+  } catch (e) {
+    w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
+    try { await port?.close?.(); } catch {}
+    transport = loader = null; // cleanup refs (no behavior change to IO)
+    connectBtn.disabled = false;
+  }
+};
+
+/*  
 // ---------- Connect ----------
 connectBtn.onclick = async () => {
   connectBtn.disabled = true;
@@ -264,9 +311,61 @@ connectBtn.onclick = async () => {
     connectBtn.disabled = false;
   }
 };
-
+*/
     
 
+// ---------- Disconnect (Launchpad-style reset via DTR pulse) ----------
+disconnectBtn.onclick = async () => {
+  w('DISCONNECT: Click');
+  w('DISCONNECT: Begin (Launchpad-style DTR reset) …');
+
+  const nap = (ms) => new Promise(r => setTimeout(r, ms));
+
+  try {
+    if (transport) {
+      w('DISCONNECT: transport.disconnect() …');
+      try {
+        await transport.disconnect();
+        w('DISCONNECT: transport.disconnect() OK');
+      } catch (e) {
+        w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
+      }
+    } else {
+      w('DISCONNECT: No active transport (native path will still reset).');
+    }
+
+    w('DISCONNECT: Ensuring native port is closed before pulse …');
+    try { await port?.close?.(); } catch {}
+
+    w(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
+    await port.open({ baudRate: OPEN_BAUD });
+    w('DISCONNECT: port.open() OK');
+
+    w('DISCONNECT: DTR=true (EN LOW/reset) …');
+    await port.setSignals({ dataTerminalReady: true });
+    await nap(120);
+
+    w('DISCONNECT: DTR=false (EN HIGH -> run app) …');
+    await port.setSignals({ dataTerminalReady: false });
+    await nap(120);
+
+    w('DISCONNECT: port.close() …');
+    await port.close();
+    w('DISCONNECT: port.close() OK');
+  } catch (e) {
+    w(`DISCONNECT: Error: ${e?.message || e}`);
+  } finally {
+    w('DISCONNECT: Reset local state, re-enable Connect');
+    port = transport = loader = null;
+    connected = false;
+    connectBtn.disabled = false;
+    flashBtn.disabled = true;
+    disconnectBtn.disabled = true;
+    w('DISCONNECT: Completed.');
+  }
+};
+
+/*
 // ---------- Disconnect (Launchpad-style reset via DTR pulse) ----------
 disconnectBtn.onclick = async () => {
   w('DISCONNECT: Begin (Launchpad-style DTR reset) …');
@@ -317,7 +416,90 @@ disconnectBtn.onclick = async () => {
     w('DISCONNECT: Completed.');
   }
 };
-  
+*/
+
+
+// ---------- Upload (Flash) ----------
+flashBtn.onclick = async () => {
+  w('FLASH: Click');
+  flashBtn.disabled = true;
+  try {
+    if (!selectedBuild) throw new Error('No firmware selected.');
+    if (!loader || !transport) throw new Error('Not connected. Click Connect first.');
+
+    const parts = Array.isArray(selectedBuild.parts) && selectedBuild.parts.length
+      ? selectedBuild.parts
+      : [{ path: 'webflash/BTAudio.bin', offset: 0 }];
+
+    w(`FLASH: Preparing ${parts.length} part(s) …`);
+
+    const fileArray = [];
+    let totalBytes = 0;
+
+    for (const p of parts) {
+      // Resolve firmware part URLs robustly (absolute, '/…', 'webflash/…', or relative)
+      let url;
+      if (/^https?:\/\//i.test(p.path)) {
+        url = p.path;
+      } else if (p.path.startsWith('/')) {
+        url = new URL(p.path, window.location.origin).href;
+      } else if (p.path.startsWith('webflash/')) {
+        url = new URL(p.path, PROJECT_BASE).href;
+      } else {
+        url = new URL(p.path, MANIFEST_BASE).href;
+      }
+
+      w(`FLASH: Fetching ${url}`);
+      const resp = await fetch(url, { cache: 'no-cache' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+
+      const u8 = new Uint8Array(await resp.arrayBuffer());
+      totalBytes += u8.length;
+
+      const address =
+        (typeof p.offset === 'string' && p.offset.startsWith('0x')) ? parseInt(p.offset, 16) :
+        (typeof p.offset === 'number' ? p.offset : parseInt(p.offset || 0, 10));
+
+      fileArray.push({ address, data: u8ToBinaryString(u8) });
+      w(`FLASH: queued ${u8.length} bytes @ 0x${address.toString(16)}`);
+    }
+
+    w(`FLASH: Begin write (${parts.length} part(s), total ~${totalBytes} bytes, compressed) …`);
+
+    let lastPct = -1;
+    const reportProgress = (_idx, written, total) => {
+      const pct = total > 0 ? Math.floor((written / total) * 100) : 0;
+      if (pct !== lastPct) { lastPct = pct; w(`FLASH: ${pct}%`); }
+    };
+
+    await loader.writeFlash({
+      fileArray,
+      flashSize: 'keep',
+      flashMode: 'keep',
+      flashFreq: 'keep',
+      compress: true,
+      reportProgress
+    });
+    w('FLASH: Write complete.');
+
+    w('FLASH: Finalizing & rebooting …');
+    try {
+      await loader.flashFinish(true); // true => reset to run app
+      w('FLASH: flashFinish(true) OK');
+    } catch (e) {
+      w(`FLASH: flashFinish(true) err: ${e?.message || e}`);
+    }
+
+    await sleep(150);
+    w('DONE: Upload finished. Device should reboot into the new firmware.');
+  } catch (e) {
+    w(`FLASH: FAILED: ${e?.message || e}`);
+  } finally {
+    flashBtn.disabled = false; // leave connected so user may flash again or disconnect
+  }
+};
+
+  /*
 // ---------- Upload (Flash) ----------
 flashBtn.onclick = async () => {
   flashBtn.disabled = true;
@@ -405,6 +587,7 @@ flashBtn.onclick = async () => {
     flashBtn.disabled = false;
   }
 };
+*/
 
 </script>
 </body>
