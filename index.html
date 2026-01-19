@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=4</p>
+  <p class="muted">v=5</p>
 
   <div class="panel">
     <div class="row">
@@ -214,6 +214,16 @@
   });
 
 
+// Convert Uint8Array -> binary string (some bundles still expect a string in writeFlash)
+function u8ToBinaryString(u8) {
+  let s = '';
+  const CHUNK = 1 << 15; // 32KB
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+  }
+  return s;
+}
+
 // ---------- Connect ----------
 connectBtn.onclick = async () => {
   connectBtn.disabled = true;
@@ -238,7 +248,8 @@ connectBtn.onclick = async () => {
     w(`Chip: ${chip}`);
     await loader.flashId();
     w('after esploader.flashId')          
-    disconnectBtn.disabled = !connected;        
+    flashBtn.disabled = false;
+    disconnectBtn.disabled = false
   } catch (e) {
     w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
     try { await port?.close?.(); } catch {}
@@ -298,6 +309,80 @@ disconnectBtn.onclick = async () => {
   }
 };
   
+// ---------- Upload (Flash) ----------
+flashBtn.onclick = async () => {
+  flashBtn.disabled = true;
+  try {
+    if (!selectedBuild) throw new Error('No firmware selected.');
+    if (!loader || !transport) throw new Error('Not connected. Click Connect first.');
+
+    // Build parts from manifest. Expect: { parts: [{ path, offset }], chipFamily: 'ESP32' }
+    // Fallback if manifest omitted: a single merged image at 0x000000
+    const parts = Array.isArray(selectedBuild.parts) && selectedBuild.parts.length
+      ? selectedBuild.parts
+      : [{ path: 'webflash/BTAudio.bin', offset: 0 }];
+
+    // Normalize offsets to numbers (hex or decimal accepted)
+    const fileArray = [];
+    let totalBytes = 0;
+
+    w(`FLASH: Preparing ${parts.length} part(s) …`);
+    for (const p of parts) {
+      const url = new URL(p.path, window.location.origin).href;
+      w(`FLASH: Fetching ${url}`);
+      const resp = await fetch(url, { cache: 'no-cache' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+      const u8 = new Uint8Array(await resp.arrayBuffer());
+      totalBytes += u8.length;
+      fileArray.push({
+        address: (typeof p.offset === 'string' && p.offset.startsWith('0x')) ? parseInt(p.offset, 16)
+               : (typeof p.offset === 'number' ? p.offset
+               : parseInt(p.offset || 0, 10)),
+        data: u8ToBinaryString(u8)
+      });
+      w(`FLASH: queued ${u8.length} bytes @ 0x${fileArray[fileArray.length-1].address.toString(16)}`);
+    }
+
+    // Show our own progress
+    let lastPct = -1;
+    const reportProgress = (_idx, written, total) => {
+      const pct = total > 0 ? Math.floor((written / total) * 100) : 0;
+      if (pct !== lastPct) { lastPct = pct; w(`FLASH: ${pct}%`); }
+    };
+
+    // Minimal call: keep flash parameters; compress true for speed; stay @115200 for CH340 reliability
+    w(`FLASH: Writing ${totalBytes} bytes (compressed) …`);
+    await loader.writeFlash({
+      fileArray,
+      flashSize: 'keep',
+      flashMode: 'keep',
+      flashFreq: 'keep',
+      compress: true,
+      reportProgress
+    });
+    w('FLASH: Write complete.');
+
+    // Finish & reboot
+    w('FLASH: Finalizing & rebooting …');
+    try {
+      await loader.flashFinish(true); // true => reset to run app
+      w('FLASH: flashFinish(true) OK');
+    } catch (e) {
+      w(`FLASH: flashFinish(true) err: ${e?.message || e}`);
+    }
+
+    // Optional: brief settle
+    await sleep(150);
+    w('DONE: Upload finished. Device should reboot into the new firmware.');
+
+  } catch (e) {
+    w(`FLASH: FAILED: ${e?.message || e}`);
+  } finally {
+    // Leave connected state as-is so the user can Disconnect or Upload again if desired
+    flashBtn.disabled = false;
+  }
+};
+
 </script>
 </body>
 </html>
