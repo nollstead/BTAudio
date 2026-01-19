@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=11</p>
+  <p class="muted">v=12</p>
 
   <div class="panel">
     <div class="row">
@@ -284,7 +284,58 @@ connectBtn.onclick = async () => {
   }
 };
 
+disconnectBtn.onclick = rebootAndDisconnect;
+
+// Shared: perform the Launchpad-style DTR reset + cleanup UI
+async function rebootAndDisconnect() {
+  const nap = (ms) => new Promise(r => setTimeout(r, ms));
+
+  try {
+    if (transport) {
+      w('DISCONNECT: transport.disconnect() …');
+      try {
+        await transport.disconnect();
+        w('DISCONNECT: transport.disconnect() OK');
+      } catch (e) {
+        w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
+      }
+    } else {
+      w('DISCONNECT: No active transport (native path will still reset).');
+    }
+
+    w('DISCONNECT: Ensuring native port is closed before pulse …');
+    try { await port?.close?.(); } catch {}
+
+    w(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
+    await port.open({ baudRate: OPEN_BAUD });
+    w('DISCONNECT: port.open() OK');
+
+    w('DISCONNECT: DTR=true (EN LOW/reset) …');
+    await port.setSignals({ dataTerminalReady: true });
+    await nap(120);
+
+    w('DISCONNECT: DTR=false (EN HIGH -> run app) …');
+    await port.setSignals({ dataTerminalReady: false });
+    await nap(120);
+
+    w('DISCONNECT: port.close() …');
+    await port.close();
+    w('DISCONNECT: port.close() OK');
+  } catch (e) {
+    w(`DISCONNECT: Error: ${e?.message || e}`);
+  } finally {
+    w('DISCONNECT: Reset local state, re-enable Connect');
+    port = transport = loader = null;
+    connected = false;
+    connectBtn.disabled = false;
+    flashBtn.disabled = true;
+    disconnectBtn.disabled = true;
+    w('DISCONNECT: Completed.');
+  }
+}
+  
 // ---------- Disconnect (Launchpad-style reset via DTR pulse) ----------
+/*
 disconnectBtn.onclick = async () => {
   const nap = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -331,6 +382,7 @@ disconnectBtn.onclick = async () => {
     w('DISCONNECT: Completed.');
   }
 };
+*/
   
 // ---------- Upload (Flash) ----------
 flashBtn.onclick = async () => {
@@ -406,7 +458,9 @@ flashBtn.onclick = async () => {
     }
 
     await sleep(150);
-    w('DONE: Upload finished. Device should reboot into the new firmware.');
+    //w('DONE: Upload finished. Device should reboot into the new firmware.');
+    // Automatically reset & close the port (same behavior as clicking Disconnect)
+    await rebootAndDisconnect();
   } catch (e) {
     w(`FLASH: FAILED: ${e?.message || e}`);
   } finally {
