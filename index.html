@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=1</p>
+  <p class="muted">v=2</p>
 
   <div class="panel">
     <div class="row">
@@ -210,6 +210,92 @@
     // Keep Upload disabled until Connect succeeds
     flashBtn.disabled = true;
   });
+
+
+// ---------- Connect ----------
+btnConnect.onclick = async () => {
+  btnConnect.disabled = true;
+  try {
+    if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
+    w(`ENV: UA=${navigator.userAgent}`);
+
+    // Let user pick a port (shows both CP210x + CH340 because of your FILTERS)
+    port = await navigator.serial.requestPort({ filters: FILTERS });
+    const info = port.getInfo?.()||{};
+    const vendorId  = info.usbVendorId  || 0;
+    const productId = info.usbProductId || 0;
+
+    w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
+    transport = new Transport(port,  false, false);
+    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
+    w('loader loaded')
+    connected = true;
+    chipDesc = await loader.main();
+    w(`Chip description: ${chipDesc}`);
+    chip = loader.chip?.CHIP_NAME;    
+    w(`Chip: ${chip}`);
+    await loader.flashId();
+    w('after esploader.flashId')          
+    btnDisconnect.disabled = !connected;        
+  } catch (e) {
+    w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
+    try { await port?.close?.(); } catch {}
+    btnConnect.disabled = false;
+  }
+};
+
+    
+
+// ---------- Disconnect (Launchpad-style reset via DTR pulse) ----------
+btnDisconnect.onclick = async () => {
+  w('DISCONNECT: Begin (Launchpad-style DTR reset) …');
+
+  // tiny inline nap so we don't add helpers
+  const nap = (ms) => new Promise(r => setTimeout(r, ms));
+
+  try {
+    // 1) If esptool-js has the port, disconnect so native setSignals can take over.
+    if (transport) {
+      try {
+        await transport.disconnect();
+        w('DISCONNECT: transport.disconnect() OK');
+      } catch (e) {
+        w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
+      }
+    }
+
+    // 2) Open native WebSerial port and issue a pure-DTR reset pulse (EN low→high).
+    try { await port?.close?.(); } catch {} // defensive
+
+    await port.open({ baudRate: OPEN_BAUD });
+    w('DISCONNECT: port.open() OK');
+
+    // DTR = true  → EN LOW (assert reset)
+    await port.setSignals({ dataTerminalReady: true });
+    w('DISCONNECT: DTR=true (EN LOW)');
+    await nap(120); // 100–200 ms is sufficient
+
+    // DTR = false → EN HIGH (release reset) -> device boots your app
+    await port.setSignals({ dataTerminalReady: false });
+    w('DISCONNECT: DTR=false (EN HIGH -> run app)');
+
+    // Small settle; then close
+    await nap(120);
+    await port.close();
+    w('DISCONNECT: port.close() OK');
+
+  } catch (e) {
+    w(`DISCONNECT: Error: ${e?.message || e}`);
+  } finally {
+    // 3) Reset state / UI exactly like your connect handler expects.
+    port = transport = loader = null;
+    connected = false;
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+    w('DISCONNECT: Completed.');
+  }
+};
+  
 </script>
 </body>
 </html>
