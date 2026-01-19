@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=10</p>
+  <p class="muted">v=11</p>
 
   <div class="panel">
     <div class="row">
@@ -145,7 +145,10 @@
       radio.id = id;
       radio.value = b.version || '';
       radio.checked = (selectedBuild && selectedBuild.version === b.version) || (!selectedBuild && idx===0);
-      radio.addEventListener('change', () => { selectedBuild = b; w(`UI: Selected build ${b.version} (${b.date||'no date'})`); });
+      radio.addEventListener('change', () => { 
+        selectedBuild = b; 
+        w(`Uploading ${b.version} (${b.date||'no date'})`); 
+      });
 
       const meta = document.createElement('div');
       meta.className = 'fw-meta';
@@ -180,9 +183,9 @@
 
   async function loadManifest() {
 
-    w(`Manifest: fetching ${MANIFEST_URL} …`);
+    //w(`Manifest: fetching ${MANIFEST_URL} …`);
     const resp = await fetch(MANIFEST_URL, { cache: 'no-cache' });
-    w(`Manifest: HTTP status ${resp.status}`);
+    //w(`Manifest: HTTP status ${resp.status}`);
     if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
     const data = await resp.json();
     if (!Array.isArray(data.builds)) throw new Error('manifest: builds missing');
@@ -194,10 +197,11 @@
     manifest = data;
     selectedBuild = null;
     renderFwList(data.builds);
-    w(`Manifest: loaded ${data.builds.length} build(s); newest = ${data.builds[0]?.version||'n/a'}`);
+    //w(`Manifest: loaded ${data.builds.length} build(s); newest = ${data.builds[0]?.version||'n/a'}`);
 
     // Keep Upload disabled until Connect succeeds
     flashBtn.disabled = true;
+    w('ready');
   }
 
   loadManifest().catch(e => {
@@ -241,9 +245,9 @@ connectBtn.onclick = async () => {
   connectBtn.disabled = true;
   try {
     if (!('serial' in navigator)) throw new Error('Web Serial not available (use Chrome/Edge over HTTPS).');
-    w(`ENV: UA=${navigator.userAgent}`);
+    //w(`ENV: UA=${navigator.userAgent}`);
 
-    w('CONNECT: Requesting serial port (with filters) …');
+    w('CONNECT: Requesting serial port  …');
     port = await navigator.serial.requestPort({ filters: FILTERS });
     const info = port.getInfo?.()||{};
     const vendorId  = info.usbVendorId  || 0;
@@ -254,20 +258,20 @@ connectBtn.onclick = async () => {
     //w('CONNECT: Creating Transport …');
     transport = new Transport(port, false, false);
 
-    w(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
+    //w(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
     loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term, debugLogging: false });
 
-    w('CONNECT: Calling loader.main() (auto-reset, ROM sync, stub upload, detect) …');
+    //w('CONNECT: Calling loader.main() (auto-reset, ROM sync, stub upload, detect) …');
     connected = true;
     chipDesc = await loader.main();
 
-    w(`CONNECT: Chip description: ${chipDesc}`);
+    w(`Chip description: ${chipDesc}`);
     chip = loader.chip?.CHIP_NAME ?? 'unknown';
-    w(`CONNECT: Chip family: ${chip}`);
+    w(`Chip family: ${chip}`);
 
-    w('CONNECT: Probing flash ID …');
+    //w('CONNECT: Probing flash ID …');
     await loader.flashId();
-    w('CONNECT: flashId() complete');
+    //w('CONNECT: flashId() complete');
 
     //w('CONNECT: Success; enabling Upload and Disconnect');
     flashBtn.disabled = false;
@@ -369,10 +373,10 @@ flashBtn.onclick = async () => {
         (typeof p.offset === 'number' ? p.offset : parseInt(p.offset || 0, 10));
 
       fileArray.push({ address, data: u8ToBinaryString(u8) });
-      w(`FLASH: queued ${u8.length} bytes @ 0x${address.toString(16)}`);
+      //w(`FLASH: queued ${u8.length} bytes @ 0x${address.toString(16)}`);
     }
 
-    w(`FLASH: Begin write (${parts.length} part(s), total ~${totalBytes} bytes, compressed) …`);
+    //w(`FLASH: Begin write (${parts.length} part(s), total ~${totalBytes} bytes, compressed) …`);
 
     let lastPct = -1;
     const reportProgress = (_idx, written, total) => {
