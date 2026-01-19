@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=8</p>
+  <p class="muted">v=9</p>
 
   <div class="panel">
     <div class="row">
@@ -83,7 +83,11 @@
   const logEl = document.getElementById('log');
   function ts() { return new Date().toLocaleTimeString(); }
   function w(s){ logEl.value += `[${ts()}] ${s}\n`; logEl.scrollTop = logEl.scrollHeight; }
-  const term = { clean(){}, writeLine(s){ if(s) w(`ESPLoader: ${s}`); }, write(s){ if(s) w(`ESPLoader: ${s}`); } };
+  const term = {
+    clean(){},
+    writeLine(_s){},
+    write(_s){}
+  };
 
   // ---------- DOM ----------
   const connectBtn = document.getElementById('connectBtn');
