@@ -55,7 +55,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=13</p>
+  <p class="muted">v=14</p>
 
   <div class="panel">
     <div class="row">
@@ -178,7 +178,7 @@
       radio.checked = (selectedBuild && selectedBuild.version === b.version) || (!selectedBuild && idx===0);
       radio.addEventListener('change', () => { 
         selectedBuild = b; 
-        w(`Uploading ${b.version} (${b.date||'no date'})`); 
+        //w(`Uploading ${b.version} (${b.date||'no date'})`); 
       });
 
       const meta = document.createElement('div');
@@ -323,10 +323,10 @@ async function rebootAndDisconnect() {
 
   try {
     if (transport) {
-      w('DISCONNECT: transport.disconnect() …');
+      //w('DISCONNECT: transport.disconnect() …');
       try {
         await transport.disconnect();
-        w('DISCONNECT: transport.disconnect() OK');
+        //w('DISCONNECT: transport.disconnect() OK');
       } catch (e) {
         w(`DISCONNECT: transport.disconnect() err: ${e?.message || e}`);
       }
@@ -334,10 +334,10 @@ async function rebootAndDisconnect() {
       w('DISCONNECT: No active transport (native path will still reset).');
     }
 
-    w('DISCONNECT: Ensuring native port is closed before pulse …');
+    //w('DISCONNECT: Ensuring native port is closed before pulse …');
     try { await port?.close?.(); } catch {}
 
-    w(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
+    //w(`DISCONNECT: port.open() @ ${OPEN_BAUD} …`);
     await port.open({ baudRate: OPEN_BAUD });
     //w('DISCONNECT: port.open() OK');
 
@@ -355,13 +355,13 @@ async function rebootAndDisconnect() {
   } catch (e) {
     w(`DISCONNECT: Error: ${e?.message || e}`);
   } finally {
-    w('DISCONNECT: Reset local state, re-enable Connect');
+    //w('DISCONNECT: Reset local state, re-enable Connect');
     port = transport = loader = null;
     connected = false;
     connectBtn.disabled = false;
     flashBtn.disabled = true;
     disconnectBtn.disabled = true;
-    w('DISCONNECT: Completed.');
+    //w('DISCONNECT: Completed.');
   }
 }
   
@@ -444,7 +444,7 @@ flashBtn.onclick = async () => {
   } catch (e) {
     w(`FLASH: FAILED: ${e?.message || e}`);
   } finally {
-    flashBtn.disabled = false; // leave connected so user may flash again or disconnect
+    //flashBtn.disabled = false; // leave connected so user may flash again or disconnect
   }
 };
   
