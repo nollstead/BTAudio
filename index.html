@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=5</p>
+  <p class="muted">v=6</p>
 
   <div class="panel">
     <div class="row">
@@ -100,6 +100,11 @@
     { usbVendorId: 0x1a86, usbProductId: 0x7523 },         // CH340C/G (SparkFun)
     { usbVendorId: 0x1a86, usbProductId: 0x5523 }          // CH340 alt PID (common on some clones)
   ];
+
+  // Where the manifest is hosted
+  const MANIFEST_URL = 'https://nollstead.github.io/BTAudio/webflash/manifest.json';
+  // Base directory used to resolve relative firmware part paths from the manifest
+  const MANIFEST_BASE = MANIFEST_URL.replace(/[^/]+$/, ''); // -> 'https://nollstead.github.io/BTAudio/webflash/'
   let chip = "default";
   let chipDesc = "default";
   const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
@@ -168,8 +173,10 @@
   }
 
   async function loadManifest() {
-    w('Manifest: fetching webflash/manifest.json …');
-    const resp = await fetch('https://nollstead.github.io/BTAudio/webflash/manifest.json', { cache: 'no-cache' });
+
+
+    w(`Manifest: fetching ${MANIFEST_URL} …`);
+    const resp = await fetch(MANIFEST_URL, { cache: 'no-cache' });
     w(`Manifest: HTTP status ${resp.status}`);
     if (!resp.ok) throw new Error(`manifest HTTP ${resp.status}`);
     const data = await resp.json();
@@ -304,6 +311,7 @@ disconnectBtn.onclick = async () => {
     port = transport = loader = null;
     connected = false;
     connectBtn.disabled = false;
+    flashBtn.disabled = true;
     disconnectBtn.disabled = true;
     w('DISCONNECT: Completed.');
   }
@@ -328,7 +336,8 @@ flashBtn.onclick = async () => {
 
     w(`FLASH: Preparing ${parts.length} part(s) …`);
     for (const p of parts) {
-      const url = new URL(p.path, window.location.origin).href;
+      // Resolve relative part paths against the manifest directory; preserve absolute URLs
+      const url = new URL(p.path, MANIFEST_BASE).href;
       w(`FLASH: Fetching ${url}`);
       const resp = await fetch(url, { cache: 'no-cache' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
