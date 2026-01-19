@@ -34,7 +34,7 @@
 </head>
 <body>
   <h1>BTAudio Firmware Update</h1>
-  <p class="muted">v=6</p>
+  <p class="muted">v=7</p>
 
   <div class="panel">
     <div class="row">
@@ -70,7 +70,6 @@
     <textarea id="log" readonly></textarea>
   </div>
 
-
 <script type="module">
   /********************************************************************
    * BTAudio Firmware Update – minimal index (manifest + connect shell)
@@ -102,9 +101,12 @@
   ];
 
   // Where the manifest is hosted
-  const MANIFEST_URL = 'https://nollstead.github.io/BTAudio/webflash/manifest.json';
-  // Base directory used to resolve relative firmware part paths from the manifest
-  const MANIFEST_BASE = MANIFEST_URL.replace(/[^/]+$/, ''); // -> 'https://nollstead.github.io/BTAudio/webflash/'
+  const MANIFEST_URL  = 'https://nollstead.github.io/BTAudio/webflash/manifest.json';
+  // Base used for relative part paths that live next to the manifest
+  const MANIFEST_BASE = new URL('.', MANIFEST_URL).href;     // -> .../BTAudio/webflash/
+  // Project base one level up (helps when parts already include `webflash/...`)
+  const PROJECT_BASE  = new URL('..', MANIFEST_BASE).href;   // -> .../BTAudio/
+  
   let chip = "default";
   let chipDesc = "default";
   const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
@@ -174,7 +176,6 @@
 
   async function loadManifest() {
 
-
     w(`Manifest: fetching ${MANIFEST_URL} …`);
     const resp = await fetch(MANIFEST_URL, { cache: 'no-cache' });
     w(`Manifest: HTTP status ${resp.status}`);
@@ -200,7 +201,7 @@
     const fallback = {
       version: 'current',
       chipFamily: 'ESP32',
-      parts: [{ path: 'webflash/BTAudio.bin', offset: 0 }]
+      parts: [{ path: `${MANIFEST_BASE}BTAudio.bin`, offset: 0 }]
     };
     selectedBuild = fallback;
     const div = document.createElement('div');
@@ -247,19 +248,19 @@ connectBtn.onclick = async () => {
     w(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
     transport = new Transport(port,  false, false);
     loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term });
-    w('loader loaded')
     connected = true;
     chipDesc = await loader.main();
     w(`Chip description: ${chipDesc}`);
     chip = loader.chip?.CHIP_NAME;    
     w(`Chip: ${chip}`);
     await loader.flashId();
-    w('after esploader.flashId')          
-    flashBtn.disabled = false;
-    disconnectBtn.disabled = false
+    w(`after esploader.flashId`)
+      flashBtn.disabled = false;
+    disconnectBtn.disabled = false;
   } catch (e) {
     w(`CONNECT: FAILED: ${e?.name?e.name+': ':''}${e?.message || e}`);
     try { await port?.close?.(); } catch {}
+    transport = loader = null;
     connectBtn.disabled = false;
   }
 };
@@ -336,8 +337,21 @@ flashBtn.onclick = async () => {
 
     w(`FLASH: Preparing ${parts.length} part(s) …`);
     for (const p of parts) {
-      // Resolve relative part paths against the manifest directory; preserve absolute URLs
-      const url = new URL(p.path, MANIFEST_BASE).href;
+      // Resolve firmware part URLs robustly:
+      // - absolute http(s): use as-is
+      // - leading '/': resolve against origin
+      // - starts with 'webflash/': resolve from project base (.../BTAudio/)
+      // - otherwise: resolve from manifest dir (.../BTAudio/webflash/)
+      let url;
+      if (/^https?:\/\//i.test(p.path)) {
+        url = p.path;
+      } else if (p.path.startsWith('/')) {
+        url = new URL(p.path, window.location.origin).href;
+      } else if (p.path.startsWith('webflash/')) {
+        url = new URL(p.path, PROJECT_BASE).href;
+      } else {
+        url = new URL(p.path, MANIFEST_BASE).href;
+      }
       w(`FLASH: Fetching ${url}`);
       const resp = await fetch(url, { cache: 'no-cache' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
