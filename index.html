@@ -556,6 +556,11 @@ flashBtn.onclick = async () => {
       w('Baud rate changed');
     } catch (e) {
       w(`Baud change failed (continuing at ${OPEN_BAUD})`);
+    }
+
+    //w('FLASH: Erasing flash (may take a while) …');
+    //await loader.eraseFlash();
+    //w('FLASH: Erase complete.');
     
     await loader.writeFlash({
       fileArray,
