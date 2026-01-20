@@ -194,7 +194,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=19</p>
+  <p class="page-version muted">v=20</p>
 
 
 <script type="module">
@@ -437,6 +437,9 @@ try {
   
   await port.close();
   wv('CONNECT: Manual reset sequence complete');
+
+  // Give the ROM bootloader time to fully initialize
+  await sleep(200);
 } catch (e) {
   wv(`CONNECT: Manual reset sequence skipped/failed: ${e?.message || e}`);
   try { await port?.close?.(); } catch {}
