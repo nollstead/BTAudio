@@ -190,7 +190,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=19</p>
+  <p class="page-version muted">v=20</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -558,9 +558,9 @@ flashBtn.onclick = async () => {
       w(`Baud change failed (continuing at ${OPEN_BAUD})`);
     }
 
-    //w('FLASH: Erasing flash (may take a while) …');
-    //await loader.eraseFlash();
-    //w('FLASH: Erase complete.');
+    w('FLASH: Erasing flash (may take a while) …');
+    await loader.eraseFlash();
+    w('FLASH: Erase complete.');
     
     await loader.writeFlash({
       fileArray,
