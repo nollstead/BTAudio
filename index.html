@@ -194,7 +194,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=24</p>
+  <p class="page-version muted">v=25</p>
 
 
 <script type="module">
@@ -428,13 +428,13 @@ try {
   
   // Hold GPIO0 LOW (RTS=true), then pulse reset
   await port.setSignals({ dataTerminalReady: false, requestToSend: true }); // GPIO0=LOW, EN=HIGH
-  await sleep(100);
+  await sleep(200);  // longer setup
   
   await port.setSignals({ dataTerminalReady: true, requestToSend: true });  // GPIO0=LOW, EN=LOW (reset)
-  await sleep(100);
+  await sleep(200);  // longer reset pulse
   
   await port.setSignals({ dataTerminalReady: false, requestToSend: true }); // GPIO0=LOW, EN=HIGH (run with boot low)
-  await sleep(400);  // Give bootloader time to start while GPIO0 still LOW
+  await sleep(1000);  // MUCH longer - give ROM bootloader plenty of time to start and sample GPIO0
   
   // NOW release GPIO0
   await port.setSignals({ dataTerminalReady: false, requestToSend: false });
@@ -445,7 +445,7 @@ try {
   const drainStart = performance.now();
   let totalDrained = 0;
   
-  while (performance.now() - drainStart < 500) { // drain for up to 500ms
+  while (performance.now() - drainStart < 500) {
     try {
       const { value, done } = await Promise.race([
         reader.read(),
