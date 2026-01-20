@@ -47,55 +47,6 @@
       padding:18px;
       margin-top:10px
     }
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>BTAudio Firmware Update</title>
-  <style>
-    :root{--bg:#121212;--panel:#1e1e1e;--text:#eaeaea;--muted:#bbb;--accent:#4CAF50;--accent2:#43a047;--border:rgba(255,255,255,.08)}
-    *{box-sizing:border-box}
-    body{
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-      max-width:780px;
-      margin:48px auto;
-      padding:20px;
-      background:var(--bg);
-      color:var(--text);
-      line-height:1.6
-    }
-    h1{margin:0 0 8px}
-    .muted{color:var(--muted)}
-
-    .panel{
-      background:var(--panel);
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:20px;
-      margin:18px 0;
-      box-shadow:0 0 20px rgba(0,0,0,.35)
-    }
-
-    .row{
-      display:flex;
-      gap:12px;
-      flex-wrap:wrap;
-      margin:16px 0;
-      align-items:center
-    }
-
-    .fw-label-row{
-      flex-basis:100%;
-      margin-bottom:6px
-    }
-
-    .instructions{
-      background:#1e1e1e;
-      border-radius:14px;
-      padding:18px;
-      margin-top:10px
-    }
 
     button{
       background:var(--accent);
@@ -239,7 +190,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=17</p>
+  <p class="page-version muted">v=18</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -249,11 +200,6 @@
   // ---------- Logging ----------
   const logEl = document.getElementById('log');
   function ts() { return new Date().toLocaleTimeString(); }
-  //function w(s){
-  //  logEl.value += `[${ts()}] ${s}\n`;
-  //  logEl.scrollTop = logEl.scrollHeight;
-  //  if (btnClearLog.disabled && logEl.value.length) btnClearLog.disabled = false;
-  //}
   const term = {
     clean(){},
     writeLine(_s){},
