@@ -194,7 +194,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=23</p>
+  <p class="page-version muted">v=24</p>
 
 
 <script type="module">
@@ -426,13 +426,6 @@ wv('CONNECT: Attempting manual bootloader reset sequence …');
 try {
   await port.open({ baudRate: OPEN_BAUD });
   
-  // Clear any buffered data first
-  const reader = port.readable.getReader();
-  try {
-    await reader.cancel();
-  } catch {}
-  reader.releaseLock();
-  
   // Hold GPIO0 LOW (RTS=true), then pulse reset
   await port.setSignals({ dataTerminalReady: false, requestToSend: true }); // GPIO0=LOW, EN=HIGH
   await sleep(100);
@@ -445,6 +438,28 @@ try {
   
   // NOW release GPIO0
   await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+  
+  // Drain any garbage from the buffer
+  wv('CONNECT: Draining serial buffer...');
+  const reader = port.readable.getReader();
+  const drainStart = performance.now();
+  let totalDrained = 0;
+  
+  while (performance.now() - drainStart < 500) { // drain for up to 500ms
+    try {
+      const { value, done } = await Promise.race([
+        reader.read(),
+        sleep(50).then(() => ({ value: null, done: true }))
+      ]);
+      if (done || !value || value.length === 0) break;
+      totalDrained += value.length;
+    } catch {
+      break;
+    }
+  }
+  
+  reader.releaseLock();
+  wv(`CONNECT: Drained ${totalDrained} bytes`);
   
   await port.close();
   wv('CONNECT: Manual reset sequence complete');
@@ -476,19 +491,18 @@ try {
     flashBtn.disabled = false;
     disconnectBtn.disabled = false;
 
-} catch (e) {
-  if (e && e.name === 'NotFoundError') {
-    // User clicked "Cancel" in the port picker -> no log, just restore UI
-    connectBtn.disabled = false;
-  } else {
-    // All real errors still go through your logger
-    w(`CONNECT: FAILED: ${e?.name ? e.name + ': ' : ''}${e?.message || e}`);
-    try { await port?.close?.(); } catch {}
-    transport = loader = null;  // reset state
-    connectBtn.disabled = false;
+  } catch (e) {
+    if (e && e.name === 'NotFoundError') {
+      // User clicked "Cancel" in the port picker -> no log, just restore UI
+      connectBtn.disabled = false;
+    } else {
+      // All real errors still go through your logger
+      w(`CONNECT: FAILED: ${e?.name ? e.name + ': ' : ''}${e?.message || e}`);
+      try { await port?.close?.(); } catch {}
+      transport = loader = null;  // reset state
+      connectBtn.disabled = false;
+    }
   }
-}
-
 };
 
 disconnectBtn.onclick = rebootAndDisconnect;
