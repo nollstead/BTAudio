@@ -203,7 +203,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=20</p>
+  <p class="page-version muted">v=21</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -602,6 +602,7 @@ btnClearLog.onclick = () => {
 };
 
 // ---------- Claude Signal Tester ----------
+// per claude, auto-reset circuit is triggered by the RTS signal transition when the port closes, not by DTR at all, and not by just setting  signal levels
 const chkDTR = document.getElementById('chkDTR');
 const chkRTS = document.getElementById('chkRTS');
 const btnTestOpen = document.getElementById('btnTestOpen');
@@ -660,31 +661,33 @@ chkDTR.onchange = chkRTS.onchange = async () => {
 
 btnTestReset.onclick = async () => {
   if (!testPort) return;
-  tlog('Running bootloader sequence...');
+  tlog('Running port-close reset sequence...');
   
-  // Step 1: GPIO0 LOW
+  // Step 1: Set RTS high (GPIO0 LOW for boot mode)
   chkRTS.checked = true;
   chkDTR.checked = false;
   await testPort.setSignals({ dataTerminalReady: false, requestToSend: true });
-  tlog('Step 1: RTS=true (GPIO0 LOW), DTR=false (EN HIGH) - LED should be normal');
-  await sleep(500);
+  tlog('Step 1: RTS=true (GPIO0 LOW)');
+  await sleep(100);
   
-  // Step 2: Reset (EN LOW while GPIO0 still LOW)
-  chkDTR.checked = true;
-  await testPort.setSignals({ dataTerminalReady: true, requestToSend: true });
-  tlog('Step 2: DTR=true (EN LOW = RESET), RTS=true (GPIO0 LOW) - LED should be OFF');
-  await sleep(500);
+  // Step 2: Close port - this should trigger reset
+  tlog('Step 2: Closing port (should trigger reset)...');
+  await testPort.close();
+  await sleep(100);
   
-  // Step 3: Release reset, keep GPIO0 LOW
-  chkDTR.checked = false;
+  // Step 3: Reopen port
+  tlog('Step 3: Reopening port...');
+  await testPort.open({ baudRate: OPEN_BAUD });
+  
+  // Step 4: Keep RTS high briefly to hold GPIO0 low during boot
   await testPort.setSignals({ dataTerminalReady: false, requestToSend: true });
-  tlog('Step 3: DTR=false (EN HIGH = RUN), RTS=true (GPIO0 LOW) - BOOTLOADER MODE - LED should be OFF');
-  await sleep(2000);
+  tlog('Step 4: Holding RTS=true (GPIO0 LOW) - should be in bootloader');
+  await sleep(500);
   
-  // Step 4: Release GPIO0
+  // Step 5: Release
   chkRTS.checked = false;
   await testPort.setSignals({ dataTerminalReady: false, requestToSend: false });
-  tlog('Step 4: All released - if in bootloader, LED stays OFF. If app boots, LED turns on.');
+  tlog('Step 5: Released. LED off = bootloader. LED on = app booted.');
 };
   
 </script>
