@@ -192,8 +192,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=18</p>
-
+  <p class="page-version muted">v=19</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -402,6 +401,7 @@ connectBtn.onclick = async () => {
 
     wv('CONNECT: Requesting serial port  …');
     port = await navigator.serial.requestPort({ filters: FILTERS });
+    w(`Connecting to board...`);    w(`Connected to serial port, choose firmware then click Upload`);
     wv(`calling getinfo`);
     const info = port.getInfo?.()||{};
     wv(`done with getinfo`);
