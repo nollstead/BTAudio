@@ -152,7 +152,18 @@
       <button id="connectBtn" disabled>Connect</button>
       <button id="flashBtn"   disabled>Upload</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
-    </div>
+<!-- Claude -->
+<fieldset style="margin-top: 10px; padding: 10px; border: 1px solid #ccc;">
+  <legend>Reset Signal Tester</legend>
+  <div style="margin-bottom: 8px;">
+    <label><input type="checkbox" id="chkDTR"> DTR (controls EN/Reset)</label><br>
+    <label><input type="checkbox" id="chkRTS"> RTS (controls GPIO0/Boot)</label>
+  </div>
+  <button id="btnTestOpen">Open Port</button>
+  <button id="btnTestClose" disabled>Close Port</button>
+  <button id="btnTestReset" disabled>Bootloader Sequence</button>
+  <div id="testStatus" style="margin-top: 8px; font-family: monospace; font-size: 12px;"></div>
+</fieldset>    </div>
 
     <!-- Version picker -->
     <div class="row" style="align-items:flex-start">
@@ -192,7 +203,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=19</p>
+  <p class="page-version muted">v=20</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -590,6 +601,92 @@ btnClearLog.onclick = () => {
   // connectBtn.focus();
 };
 
+// ---------- Claude Signal Tester ----------
+const chkDTR = document.getElementById('chkDTR');
+const chkRTS = document.getElementById('chkRTS');
+const btnTestOpen = document.getElementById('btnTestOpen');
+const btnTestClose = document.getElementById('btnTestClose');
+const btnTestReset = document.getElementById('btnTestReset');
+const testStatus = document.getElementById('testStatus');
+
+let testPort = null;
+
+function tlog(msg) {
+  testStatus.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  console.log('TEST:', msg);
+}
+
+btnTestOpen.onclick = async () => {
+  try {
+    testPort = await navigator.serial.requestPort({ filters: FILTERS });
+    await testPort.open({ baudRate: OPEN_BAUD });
+    tlog('Port opened. Toggle DTR/RTS checkboxes to control signals.');
+    btnTestOpen.disabled = true;
+    btnTestClose.disabled = false;
+    btnTestReset.disabled = false;
+    chkDTR.disabled = false;
+    chkRTS.disabled = false;
+  } catch (e) {
+    tlog(`Open failed: ${e.message}`);
+  }
+};
+
+btnTestClose.onclick = async () => {
+  try {
+    await testPort?.close();
+    tlog('Port closed.');
+  } catch (e) {
+    tlog(`Close error: ${e.message}`);
+  }
+  testPort = null;
+  btnTestOpen.disabled = false;
+  btnTestClose.disabled = true;
+  btnTestReset.disabled = true;
+  chkDTR.checked = false;
+  chkRTS.checked = false;
+};
+
+chkDTR.onchange = chkRTS.onchange = async () => {
+  if (!testPort) return;
+  const dtr = chkDTR.checked;
+  const rts = chkRTS.checked;
+  try {
+    await testPort.setSignals({ dataTerminalReady: dtr, requestToSend: rts });
+    tlog(`Signals set: DTR=${dtr} (EN=${dtr?'LOW':'HIGH'}), RTS=${rts} (GPIO0=${rts?'LOW':'HIGH'})`);
+  } catch (e) {
+    tlog(`Signal error: ${e.message}`);
+  }
+};
+
+btnTestReset.onclick = async () => {
+  if (!testPort) return;
+  tlog('Running bootloader sequence...');
+  
+  // Step 1: GPIO0 LOW
+  chkRTS.checked = true;
+  chkDTR.checked = false;
+  await testPort.setSignals({ dataTerminalReady: false, requestToSend: true });
+  tlog('Step 1: RTS=true (GPIO0 LOW), DTR=false (EN HIGH) - LED should be normal');
+  await sleep(500);
+  
+  // Step 2: Reset (EN LOW while GPIO0 still LOW)
+  chkDTR.checked = true;
+  await testPort.setSignals({ dataTerminalReady: true, requestToSend: true });
+  tlog('Step 2: DTR=true (EN LOW = RESET), RTS=true (GPIO0 LOW) - LED should be OFF');
+  await sleep(500);
+  
+  // Step 3: Release reset, keep GPIO0 LOW
+  chkDTR.checked = false;
+  await testPort.setSignals({ dataTerminalReady: false, requestToSend: true });
+  tlog('Step 3: DTR=false (EN HIGH = RUN), RTS=true (GPIO0 LOW) - BOOTLOADER MODE - LED should be OFF');
+  await sleep(2000);
+  
+  // Step 4: Release GPIO0
+  chkRTS.checked = false;
+  await testPort.setSignals({ dataTerminalReady: false, requestToSend: false });
+  tlog('Step 4: All released - if in bootloader, LED stays OFF. If app boots, LED turns on.');
+};
+  
 </script>
 </body>
 </html>
