@@ -194,7 +194,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=21</p>
+  <p class="page-version muted">v=22</p>
 
 
 <script type="module">
@@ -419,40 +419,10 @@ connectBtn.onclick = async () => {
     wv(`   port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
 
     wv('CONNECT: Creating Transport …');
-    transport = new Transport(port, false, false);
-
-// Claude recommendation
-// --- NEW: Manual reset sequence for finicky auto-reset circuits ---
-wv('CONNECT: Attempting manual bootloader reset sequence …');
-try {
-  await port.open({ baudRate: OPEN_BAUD });
-  
-  // First pulse - wake it up / break out of app
-  await port.setSignals({ dataTerminalReady: true, requestToSend: false });
-  await sleep(50);
-  await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-  await sleep(100);
-  
-  // Second pulse - actual bootloader entry
-  await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-  await sleep(100);
-  await port.setSignals({ dataTerminalReady: true, requestToSend: false });
-  await sleep(50);
-  await port.setSignals({ dataTerminalReady: false, requestToSend: false });
-  
-  await port.close();
-  wv('CONNECT: Manual reset sequence complete');
-
-  // Give the ROM bootloader time to fully initialize
-  await sleep(200);
-} catch (e) {
-  wv(`CONNECT: Manual reset sequence skipped/failed: ${e?.message || e}`);
-  try { await port?.close?.(); } catch {}
-}// --- END NEW ---
-    
+    transport = new Transport(port, false, false);   
 
     wv(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
-    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term, debugLogging: false });
+    loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term, debugLogging: true });
 
     wv('CONNECT: Calling loader.main() (auto-reset, ROM sync, stub upload, detect) …');
     connected = true;
