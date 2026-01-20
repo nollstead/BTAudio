@@ -3,13 +3,23 @@
   "schema": 1,
   "builds": [
     {
-      "version": "Sparkfun v0.0.1",
-      "date": "2026-01-16",
-      "label": "Initial Version",
-      "notes": "For SparkFun board, uses RGBLED",
+      "version": "v0.1.1",
+      "date": "2026-01-20",
+      "label": "",
+      "notes": "Added automatic versioning and version command",
       "chipFamily": "ESP32",
       "parts": [
-        { "path": "webflash/BTAudio.bin", "offset": 0 }
+        { "path": "webflash/BTAudio_0_1_1.bin", "offset": 0 }
+      ]
+    },
+    {
+      "version": "v0.1.0",
+      "date": "2026-01-16",
+      "label": "Initial Version",
+      "notes": "RGB LED: Blue=Bluetooth Ready, Green=Connected",
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "webflash/BTAudio_0_1_0.bin", "offset": 0 }
       ]
     },
     {
