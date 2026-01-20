@@ -394,7 +394,7 @@ connectBtn.onclick = async () => {
 
     wv('CONNECT: Requesting serial port  …');
     port = await navigator.serial.requestPort({ filters: FILTERS });
-    w(`Connecting to board...`);    w(`Connected to serial port, choose firmware then click Upload`);
+    w(`Connecting to board...`);    
     wv(`calling getinfo`);
     const info = port.getInfo?.()||{};
     wv(`done with getinfo`);
