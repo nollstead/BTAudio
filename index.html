@@ -192,7 +192,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=17</p>
+  <p class="page-version muted">v=18</p>
 
 
 <script type="module">
@@ -402,12 +402,13 @@ connectBtn.onclick = async () => {
 
     wv('CONNECT: Requesting serial port  …');
     port = await navigator.serial.requestPort({ filters: FILTERS });
+    wv(`calling getinfo`);
     const info = port.getInfo?.()||{};
+    wv(`done with getinfo`);
     const vendorId  = info.usbVendorId  || 0;
     const productId = info.usbProductId || 0;
 
     wv(`CONNECT: Selected port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
-    w(`Connected to serial port, choose firmware then click Upload`);
     
     wv(`   port -> VID=0x${vendorId.toString(16)} PID=0x${productId.toString(16)}`);
 
@@ -430,6 +431,7 @@ connectBtn.onclick = async () => {
     wv('CONNECT: flashId() complete');
 
     wv('CONNECT: Success; enabling Upload and Disconnect');
+    w(`Connected to serial port, choose firmware then click Upload`);
     flashBtn.disabled = false;
     disconnectBtn.disabled = false;
 
