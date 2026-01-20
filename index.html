@@ -194,7 +194,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=20</p>
+  <p class="page-version muted">v=21</p>
 
 
 <script type="module">
@@ -210,10 +210,15 @@
   //  logEl.scrollTop = logEl.scrollHeight;
   //  if (btnClearLog.disabled && logEl.value.length) btnClearLog.disabled = false;
   //}
+
   const term = {
     clean(){},
-    writeLine(_s){},
-    write(_s){}
+    // Clause change to term
+    writeLine(s){ wv(`ESP: ${s}`); },
+    write(s){ /* skip partial writes to reduce noise */ }  
+    // my original stuff
+  //writeLine(_s){},
+    //write(_s){}
   };
 
   // Verbose flag (persisted)
