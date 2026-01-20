@@ -194,7 +194,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=22</p>
+  <p class="page-version muted">v=23</p>
 
 
 <script type="module">
@@ -421,6 +421,38 @@ connectBtn.onclick = async () => {
     wv('CONNECT: Creating Transport …');
     transport = new Transport(port, false, false);   
 
+// Claude test
+wv('CONNECT: Attempting manual bootloader reset sequence …');
+try {
+  await port.open({ baudRate: OPEN_BAUD });
+  
+  // Clear any buffered data first
+  const reader = port.readable.getReader();
+  try {
+    await reader.cancel();
+  } catch {}
+  reader.releaseLock();
+  
+  // Hold GPIO0 LOW (RTS=true), then pulse reset
+  await port.setSignals({ dataTerminalReady: false, requestToSend: true }); // GPIO0=LOW, EN=HIGH
+  await sleep(100);
+  
+  await port.setSignals({ dataTerminalReady: true, requestToSend: true });  // GPIO0=LOW, EN=LOW (reset)
+  await sleep(100);
+  
+  await port.setSignals({ dataTerminalReady: false, requestToSend: true }); // GPIO0=LOW, EN=HIGH (run with boot low)
+  await sleep(400);  // Give bootloader time to start while GPIO0 still LOW
+  
+  // NOW release GPIO0
+  await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+  
+  await port.close();
+  wv('CONNECT: Manual reset sequence complete');
+} catch (e) {
+  wv(`CONNECT: Manual reset sequence skipped/failed: ${e?.message || e}`);
+  try { await port?.close?.(); } catch {}
+}
+    
     wv(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
     loader = new ESPLoader({ transport, baudrate: OPEN_BAUD, terminal: term, debugLogging: true });
 
