@@ -194,7 +194,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=18</p>
+  <p class="page-version muted">v=19</p>
 
 
 <script type="module">
@@ -422,26 +422,25 @@ wv('CONNECT: Attempting manual bootloader reset sequence …');
 try {
   await port.open({ baudRate: OPEN_BAUD });
   
-  // Classic esptool reset sequence with longer timing
-  // Step 1: EN=LOW, GPIO0=LOW (hold in reset, boot pin low)
-  await port.setSignals({ dataTerminalReady: false, requestToSend: true });
-  await sleep(100);
-  
-  // Step 2: EN=HIGH (release reset while boot pin still low)
+  // First pulse - wake it up / break out of app
   await port.setSignals({ dataTerminalReady: true, requestToSend: false });
   await sleep(50);
-  
-  // Step 3: Release boot pin
   await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+  await sleep(100);
+  
+  // Second pulse - actual bootloader entry
+  await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+  await sleep(100);
+  await port.setSignals({ dataTerminalReady: true, requestToSend: false });
   await sleep(50);
+  await port.setSignals({ dataTerminalReady: false, requestToSend: false });
   
   await port.close();
   wv('CONNECT: Manual reset sequence complete');
 } catch (e) {
   wv(`CONNECT: Manual reset sequence skipped/failed: ${e?.message || e}`);
   try { await port?.close?.(); } catch {}
-}
-// --- END NEW ---
+}// --- END NEW ---
     
 
     wv(`CONNECT: Creating ESPLoader @ ${OPEN_BAUD} (silent terminal) …`);
@@ -449,8 +448,12 @@ try {
 
     wv('CONNECT: Calling loader.main() (auto-reset, ROM sync, stub upload, detect) …');
     connected = true;
-    chipDesc = await loader.main();
 
+    const t0 = performance.now();
+    chipDesc = await loader.main();
+    const t1 = performance.now();
+    wv(`   loader.main() took ${((t1 - t0) / 1000).toFixed(1)}s`);
+    
     wv(`   Chip description: ${chipDesc}`);
     chip = loader.chip?.CHIP_NAME ?? 'unknown';
     wv(`   Chip family: ${chip}`);
