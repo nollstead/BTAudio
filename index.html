@@ -190,7 +190,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=18</p>
+  <p class="page-version muted">v=19</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -242,7 +242,8 @@
   
   // ---------- State & constants ----------
   let port=null, transport=null, loader=null, connected=false, stubReady=false;
-  const OPEN_BAUD = 115200; // (FAST_BAUD not used yet; we’ll add when flashing is wired)
+  const OPEN_BAUD = 115200; 
+  const FAST_BAUD = 921600;
   const FILTERS = [
     { usbVendorId: 0x10c4 },                               // CP210x (LyraT)
     { usbVendorId: 0x1a86, usbProductId: 0x7523 },         // CH340C/G (SparkFun)
@@ -548,6 +549,14 @@ flashBtn.onclick = async () => {
       }
     };
 
+    // Change baud to 921600 (faster flashing)
+    try {
+      w(`Changing baudrate to ${FAST_BAUD}`);          
+      await loader.changeBaud(FAST_BAUD);
+      w('Baud rate changed');
+    } catch (e) {
+      w(`Baud change failed (continuing at ${OPEN_BAUD})`);
+    
     await loader.writeFlash({
       fileArray,
       flashSize: 'keep',
