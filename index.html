@@ -151,6 +151,7 @@
     <div class="row">
       <button id="connectBtn" disabled>Connect</button>
       <button id="flashBtn"   disabled>Upload</button>
+      <button id="eraseBtn"   disabled>Erase</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
     <!-- Version picker -->
     <div class="row" style="align-items:flex-start">
@@ -190,7 +191,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=21</p>
+  <p class="page-version muted">v=22</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -235,6 +236,7 @@
 
   // ---------- DOM ----------
   const connectBtn = document.getElementById('connectBtn');
+  const eraseBtn = document.getElementById('eraseBtn');
   const flashBtn   = document.getElementById('flashBtn');
   const disconnectBtn = document.getElementById('disconnectBtn');
   const fwList     = document.getElementById('fwList');
@@ -427,6 +429,7 @@ connectBtn.onclick = async () => {
     wv('CONNECT: Success; enabling Upload and Disconnect');
     w(`Connected to serial port, choose firmware then click Upload`);
     flashBtn.disabled = false;
+    eraseBtn.disabled = false;
     disconnectBtn.disabled = false;
 
 } catch (e) {
@@ -442,7 +445,13 @@ connectBtn.onclick = async () => {
   }
 }
 
-};
+}
+
+eraseBtn.onclick = async () => {
+  w(`erase button clicked`);
+
+}
+    
 
 disconnectBtn.onclick = rebootAndDisconnect;
 
@@ -488,6 +497,7 @@ async function rebootAndDisconnect() {
     port = transport = loader = null;
     connected = false;
     connectBtn.disabled = false;
+    eraseBtn.disabled = true;
     flashBtn.disabled = true;
     disconnectBtn.disabled = true;
     wv('DISCONNECT: Completed.');
