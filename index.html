@@ -191,7 +191,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=22</p>
+  <p class="page-version muted">v=23</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -444,14 +444,22 @@ connectBtn.onclick = async () => {
     connectBtn.disabled = false;
   }
 }
-
 }
 
 eraseBtn.onclick = async () => {
-  w(`erase button clicked`);
-
-}
-    
+  wv(`erase button clicked`);
+  flashBtn.disabled = true;
+  try {
+    if (!loader || !transport) throw new Error('Not connected. Click Connect first.');
+    w('FLASH: Erasing flash (may take a while) …');
+    await loader.eraseFlash();
+    w('FLASH: Erase complete.');  
+  } catch (e) {
+    w(`Erase failed: ${e?.message || e}`);
+  } finally {
+    flashBtn.disabled = false;
+  }
+};    
 
 disconnectBtn.onclick = rebootAndDisconnect;
 
