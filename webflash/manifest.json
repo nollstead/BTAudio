@@ -3,6 +3,16 @@
   "schema": 1,
   "builds": [
     {
+      "version": "v0.1.2",
+      "date": "2026-01-26",
+      "label": "",
+      "notes": "Minimal build, no RGB-LED",
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "webflash/BTAudio_0_1_2.bin", "offset": 0 }
+      ]
+    },
+    {
       "version": "v0.1.1",
       "date": "2026-01-20",
       "label": "",
