@@ -41,16 +41,6 @@
       "parts": [
         { "path": "webflash/BTAudio_0_1_0.bin", "offset": 0 }
       ]
-    },
-    {
-      "version": "LyraT v0.0.1",
-      "date": "2026-01-15",
-      "label": "LyraT Only",
-      "notes": "For LyraT Testing - Do not use for SparkFun board, no RGBLED",
-      "chipFamily": "ESP32",
-      "parts": [
-        { "path": "webflash/LyraT.bin", "offset": 0 }
-      ]
     }
   ]
 }
