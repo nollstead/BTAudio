@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "device_info.c"
+    INCLUDE_DIRS
+        "" 
+    REQUIRES
+        mongoose
+        ws2812
+        bt
+        bluetooth_service
+        audio_pipeline
+        audio_stream
+        audio_hal
+        nvs_flash
+        driver
+)

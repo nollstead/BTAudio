@@ -1,0 +1,34 @@
+# Build output
+build/
+sdkconfig.old
+
+# Managed components (downloaded by ESP-IDF component manager)
+managed_components/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Windows artifacts
+nul
+Thumbs.db
+desktop.ini
+
+# macOS artifacts
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+
+# Logs and crash dumps
+*.log
+crash_dump.txt
+
+# Temporary files
+*.tmp
+*.bak

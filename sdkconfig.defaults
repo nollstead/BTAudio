@@ -1,0 +1,76 @@
+##### Bootloader #####
+CONFIG_BOOTLOADER_OFFSET_IN_FLASH=0x1000
+CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_SIZE=y
+
+##### FreeRTOS basics #####
+CONFIG_FREERTOS_ENABLE_BACKWARD_COMPATIBILITY=y
+CONFIG_FREERTOS_HZ=1000
+
+##### Driver noise control #####
+# Suppress legacy I2S driver deprecation warning (ADF bundles legacy headers)
+CONFIG_I2S_SUPPRESS_DEPRECATE_WARN=y
+
+##### Bluetooth (Classic + SPP + A2DP) #####
+# Turn on BT stack (Bluedroid)
+CONFIG_BT_ENABLED=y
+CONFIG_BLUEDROID_ENABLED=y
+
+# Classic BT (BR/EDR). You can also use BTDM if you later need BLE concurrently.
+CONFIG_CLASSIC_BT_ENABLED=y
+CONFIG_BTDM_CONTROLLER_MODE_BR_EDR_ONLY=y
+CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=y
+
+# Classic SPP profile (needed for esp_spp_* symbols)
+CONFIG_BT_SPP_ENABLED=y
+
+# A2DP playback (sink)
+CONFIG_A2DP_ENABLE=y
+
+# Prefer allocating BT buffers in PSRAM to preserve internal DRAM
+# (IDF docs: header is in bt component; declare dependency & enable)
+CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y  # "BT/BLE will first malloc from PSRAM" [1](https://github.com/espressif/esp-idf/issues/9551)
+
+##### PSRAM (external RAM) — REQUIRED for ADF external stacks #####
+# Master switch: include PSRAM component
+CONFIG_SPIRAM=y
+
+# Initialize PSRAM at boot (you should see "Found 8MB PSRAM..." on boot)
+CONFIG_SPIRAM_BOOT_INIT=y
+
+# Make PSRAM available to general malloc(); ADF & BT benefit automatically
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# Allow FreeRTOS task stacks in external RAM (both sides must be ON)
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y     # FreeRTOS permission [2](https://www.espressif.com/en/contact-us/distributors)[3](https://www.espboards.dev/esp32/esp32-lyrat/)
+
+# Safety/correctness for classic ESP32 PSRAM caching
+CONFIG_SPIRAM_CACHE_WORKAROUND=y
+
+# Build one image that still boots if PSRAM is missing (e.g., WROOM)
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+
+# Keep a small internal reserve for DMA/I2S and critical allocs
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=32768       # 32 KB always-internal
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536     # 64 KB reserve (tune 32–64 KB range)
+
+##### Serial flasher config (Flash size = 4MB for WROVER‑E / LyraT) #####
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=y
+CONFIG_ESPTOOLPY_BEFORE_RESET=y
+
+##### Partition Table (use your CSV; offsets auto-placed) #####
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_MD5=y
+
+# Suppress legacy driver deprecation warnings (ADF uses legacy APIs)
+CONFIG_I2S_SUPPRESS_DEPRECATE_WARN=y
+CONFIG_ADC_SUPPRESS_DEPRECATE_WARN=y
+CONFIG_TOUCH_SUPPRESS_DEPRECATE_WARN=y
+CONFIG_RMT_SUPPRESS_DEPRECATE_WARN=y
+CONFIG_PCNT_SUPPRESS_DEPRECATE_WARN=y
+CONFIG_GPTIMER_SUPPRESS_DEPRECATE_WARN=y
+
