@@ -191,7 +191,7 @@
     </div>
   </div>
 
-  <p class="page-version muted">v=25</p>
+  <p class="page-version muted">v=26</p>
 
 <script type="module">
   // Use the same version as test.html for identical behavior
@@ -253,7 +253,8 @@
   ];
 
   // Where the manifest is hosted
-  const MANIFEST_URL  = 'https://nollstead.github.io/BTAudio/webflash/manifest.json';
+  //const MANIFEST_URL  = 'https://nollstead.github.io/BTAudio/webflash/manifest.json';
+  const MANIFEST_URL  = new URL('webflash/manifest.json', document.baseURI).href;
   // Base used for relative part paths that live next to the manifest
   const MANIFEST_BASE = new URL('.', MANIFEST_URL).href;     // -> .../BTAudio/webflash/
   // Project base one level up (helps when parts already include `webflash/...`)
