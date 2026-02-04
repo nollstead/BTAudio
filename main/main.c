@@ -228,8 +228,7 @@ __attribute__((unused)) static void ledTestTask(void *pvParameters) {
 void app_main(void) {
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
-    esp_log_level_set("A2DP", ESP_LOG_WARN);      // SPP: only WARN and ERROR
-    esp_log_level_set("esp_image", ESP_LOG_WARN); // SPP: only WARN and ERROR
+    esp_log_level_set("A2DP", ESP_LOG_WARN);
 
     // Initialize LED
     ESP_LOGI(TAG, "Initializing LED on GPIO%d", BOARD_RGB_LED);
@@ -240,24 +239,26 @@ void app_main(void) {
     }
     ws2812_set(s_led, WS2812_YELLOW);
 
-    // Initialize NVS
-    init_nvs();
+    scan_i2c(); // Uncomment to run I2C scanner test
 
-    // Initialize audio board/codec
-    ESP_LOGI(TAG, "Initializing audio board");
-    s_board_handle = audio_board_init();
-    audio_hal_set_mute(s_board_handle->audio_hal, true); // Start muted until audio plays
-    ws2812_set(s_led, WS2812_BLUE);
+    // // Initialize NVS
+    // init_nvs();
 
-    // Initialize Bluetooth and start tasks
-    bt_audio_init(s_board_handle, s_led, BTAUDIO_VERSION);
-    bt_audio_start_a2dp();
-    bt_audio_start_spp();
+    // // Initialize audio board/codec
+    // ESP_LOGI(TAG, "Initializing audio board");
+    // s_board_handle = audio_board_init();
+    // audio_hal_set_mute(s_board_handle->audio_hal, true); // Start muted until audio plays
+    // ws2812_set(s_led, WS2812_BLUE);
 
-    // Initialize Wi-Fi (for Mongoose web server) as a task
-    // init_spiffs();       // Only needed if using SPIFFS for web server
-    // init_wifi_ap();
-    // xTaskCreate(monitorMemory, "monitorMemory", 2048, NULL, 5, NULL);
+    // // Initialize Bluetooth and start tasks
+    // bt_audio_init(s_board_handle, s_led, BTAUDIO_VERSION);
+    // bt_audio_start_a2dp();
+    // bt_audio_start_spp();
 
-    ESP_LOGI(TAG, "BTAudio v%s started", BTAUDIO_VERSION);
+    // // Initialize Wi-Fi (for Mongoose web server) as a task
+    // // init_spiffs();       // Only needed if using SPIFFS for web server
+    // // init_wifi_ap();
+    // // xTaskCreate(monitorMemory, "monitorMemory", 2048, NULL, 5, NULL);
+
+    // ESP_LOGI(TAG, "BTAudio v%s started", BTAUDIO_VERSION);
 }
