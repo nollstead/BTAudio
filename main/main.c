@@ -25,6 +25,7 @@
 #include "audio_element.h"
 #include "audio_hal.h"
 #include "audio_pipeline.h"
+#include "board_def.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s.h"
 #include "esp_a2dp_api.h"
@@ -37,8 +38,6 @@
 #include "filter_resample.h"
 #include "i2s_stream.h"
 #include "nvs_flash.h"
-
-#include "board_def.h"
 
 static const char *TAG = "MAIN";
 static const char *TAG_A2DP = "A2DP";
@@ -84,6 +83,7 @@ static void init_wifi_ap(void);
 static void monitorMemory(void *pvParameters);
 static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param);
 static void handle_spp_command(const char *cmd, size_t len);
+static void a2dp_callback(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param);
 
 // Unused test functions
 __attribute__((unused)) static void ledTestTask(void *pvParameters);
@@ -166,6 +166,30 @@ static void init_bluetooth(void) {
     esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
 }
 
+static void a2dp_callback(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param) {
+    if (event == ESP_A2D_CONNECTION_STATE_EVT) {
+        esp_a2d_connection_state_t state = param->conn_stat.state;
+        if (state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
+            ESP_LOGI(TAG_A2DP, "A2DP connected");
+            ws2812_set(s_led, WS2812_GREEN);
+        } else if (state == ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
+            ESP_LOGI(TAG_A2DP, "A2DP disconnected");
+            ws2812_set(s_led, WS2812_BLUE);
+            audio_hal_set_mute(s_board_handle->audio_hal, true);
+        }
+    } else if (event == ESP_A2D_AUDIO_STATE_EVT) {
+        esp_a2d_audio_state_t state = param->audio_stat.state;
+        if (state == ESP_A2D_AUDIO_STATE_STARTED) {
+            ESP_LOGI(TAG_A2DP, "Audio streaming started");
+            audio_hal_set_mute(s_board_handle->audio_hal, false);
+        } else if (state == ESP_A2D_AUDIO_STATE_REMOTE_SUSPEND ||
+                   state == ESP_A2D_AUDIO_STATE_STOPPED) {
+            ESP_LOGI(TAG_A2DP, "Audio streaming paused/stopped");
+            audio_hal_set_mute(s_board_handle->audio_hal, true);
+        }
+    }
+}
+
 static void a2dp_task(void *pvParameters) {
     audio_pipeline_handle_t pipeline;
     audio_element_handle_t bt_stream_reader, i2s_stream_writer;
@@ -181,7 +205,9 @@ static void a2dp_task(void *pvParameters) {
     ESP_LOGI(TAG_A2DP, "Initializing A2DP stream");
     a2dp_stream_config_t a2dp_config = {
         .type = AUDIO_STREAM_READER,
-        .user_callback = {0},
+        .user_callback = {
+            .user_a2d_cb = a2dp_callback,
+        },
         .audio_hal = s_board_handle->audio_hal,
     };
     bt_stream_reader = a2dp_stream_init(&a2dp_config);
@@ -264,7 +290,6 @@ static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     case ESP_SPP_SRV_OPEN_EVT: {
         ESP_LOGI(TAG_SPP, "Client connected");
         s_spp_handle = param->srv_open.handle;
-        ws2812_set(s_led, WS2812_BLUE);
         const char *welcome = "Type 'help' for a list of available commands.\r\n";
         esp_spp_write(s_spp_handle, strlen(welcome), (uint8_t *)welcome);
         break;
@@ -273,7 +298,6 @@ static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
     case ESP_SPP_CLOSE_EVT:
         ESP_LOGI(TAG_SPP, "Client disconnected");
         s_spp_handle = 0;
-        ws2812_set(s_led, WS2812_OFF);
         break;
 
     case ESP_SPP_DATA_IND_EVT:
@@ -462,6 +486,10 @@ __attribute__((unused)) static void ledTestTask(void *pvParameters) {
 void app_main(void) {
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
+    esp_log_level_set("A2DP", ESP_LOG_WARN);      // SPP: only WARN and ERROR
+    esp_log_level_set("esp_image", ESP_LOG_WARN); // SPP: only WARN and ERROR
+
+    // esp_log_level_set("SPP", ESP_LOG_WARN);    // SPP: only WARN and ERROR
 
     // Initialize LED
     ESP_LOGI(TAG, "Initializing LED on GPIO%d", BOARD_RGB_LED);
@@ -470,7 +498,7 @@ void app_main(void) {
         ESP_LOGE(TAG, "LED init failed: %d", err);
         return;
     }
-    ws2812_set(s_led, WS2812_OFF);
+    ws2812_set(s_led, WS2812_YELLOW);
 
     // Initialize NVS
     init_nvs();
@@ -485,6 +513,8 @@ void app_main(void) {
     // Initialize audio board/codec
     ESP_LOGI(TAG, "Initializing audio board");
     s_board_handle = audio_board_init();
+    audio_hal_set_mute(s_board_handle->audio_hal, true);  // Start muted until audio plays
+    ws2812_set(s_led, WS2812_BLUE);
 
     // Start tasks
     xTaskCreate(a2dp_task, "a2dp", 4096, NULL, 5, NULL);

@@ -5,6 +5,7 @@ idf_component_register(
     INCLUDE_DIRS
         "" 
     REQUIRES
+        bd37033
         mongoose
         ws2812
         bt

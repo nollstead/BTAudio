@@ -1,6 +1,7 @@
 # Build output
 build/
 sdkconfig.old
+mynotes.md
 
 # Managed components (downloaded by ESP-IDF component manager)
 managed_components/

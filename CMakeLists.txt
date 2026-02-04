@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.5)
 
+# Override ADF_PATH if the environment variable points to wrong location
+# (Workaround for VS Code ESP-IDF extension caching old path)
+set(ENV{ADF_PATH} "C:/Users/nolls/.espressif/esp-adf")
+
 # ES8388 I2C address override: CE/AD0 tied to 3.3V = 0x22 (8-bit address)
 #add_compile_definitions(ES8388_ADDR=0x22)
 
@@ -20,8 +24,9 @@ set(EXTRA_COMPONENT_DIRS
 # Exclude speech recognition - we don't need it and it pulls in buggy esp-dsp
 # set(EXCLUDE_COMPONENTS esp-sr)
 
-# Suppress deprecated warnings from ADF/IDF components
-add_compile_options(-Wno-deprecated-declarations -Wno-cpp)
+# Suppress warnings from ADF/IDF components (ADF v2.7 has issues with newer GCC in IDF v5.5)
+# Using CMAKE_C_FLAGS ensures these propagate to all components
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations -Wno-cpp -Wno-calloc-transposed-args -Wno-absolute-value -Wno-unused-function")
 
 # Pull in ADF version info
 include($ENV{ADF_PATH}/CMakeLists.txt)

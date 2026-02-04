@@ -44,8 +44,14 @@ audio_hal_handle_t audio_board_codec_init(void) {
     audio_hal_set_mute(codec_hal, false);
     audio_hal_set_volume(codec_hal, 80);
 
-    // ESP-ADF sets LOUT2/ROUT2 to -30dB by default. Our headphone jack uses these outputs.
-    // Set LOUT2/ROUT2 volume to 0dB (0x1E) for proper output level.
+    // ES8388 output volume register values:
+    //   0x00 = -45dB (min), 0x12 = -6dB, 0x18 = -3dB, 0x1E = 0dB, 0x21 = +4.5dB (max)
+    //
+    // LOUT1/ROUT1: Line output (for powered speakers)
+    es8388_write_reg(0x2E, 0x1E);  // DACCONTROL24: LOUT1 volume = 0dB
+    es8388_write_reg(0x2F, 0x1E);  // DACCONTROL25: ROUT1 volume = 0dB
+    //
+    // LOUT2/ROUT2: Headphone output (ESP-ADF defaults to -30dB, override to 0dB)
     es8388_write_reg(0x30, 0x1E);  // DACCONTROL26: LOUT2 volume = 0dB
     es8388_write_reg(0x31, 0x1E);  // DACCONTROL27: ROUT2 volume = 0dB
 
