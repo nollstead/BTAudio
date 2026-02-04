@@ -23,8 +23,10 @@
 #include "freertos/event_groups.h"
 
 #include "audio_hal.h"
+#include "bd37033.h"
 #include "board_def.h"
 #include "driver/i2c_master.h" // used by scan_i2c test function
+#include "i2c_bus.h"           // ESP-ADF I2C bus abstraction (for shared bus handle)
 #include "nvs_flash.h"
 
 static const char *TAG = "MAIN";
@@ -57,6 +59,7 @@ static void monitorMemory(void *pvParameters);
 // Unused test functions
 __attribute__((unused)) static void ledTestTask(void *pvParameters);
 __attribute__((unused)) void scan_i2c(void);
+__attribute__((unused)) static void test_bd37033(void);
 
 __attribute__((unused)) static void init_spiffs(void) {
     esp_vfs_spiffs_conf_t conf = {
@@ -225,6 +228,31 @@ __attribute__((unused)) static void ledTestTask(void *pvParameters) {
     }
 }
 
+__attribute__((unused)) static void test_bd37033(void) {
+    ESP_LOGI(TAG, "Testing BD37033FV...");
+
+    bd37033fv_i2c_config_t cfg = {
+        .port = I2C_NUM_0,
+        .sda = BOARD_I2C_SDA_PIN,
+        .scl = BOARD_I2C_SCL_PIN,
+        .clk_speed_hz = 100000,
+        .i2c_addr = 0x40, // Found via I2C scan (default is 0x44)
+    };
+
+    esp_err_t err = bd37033fv_init(&cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "BD37033FV init failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    bd37033fv_test();
+
+    // Keep running so we can observe
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
 void app_main(void) {
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
@@ -239,26 +267,40 @@ void app_main(void) {
     }
     ws2812_set(s_led, WS2812_YELLOW);
 
-    scan_i2c(); // Uncomment to run I2C scanner test
+    // Initialize NVS (required for Bluetooth pairing storage)
+    init_nvs();
 
-    // // Initialize NVS
-    // init_nvs();
+    // Initialize audio board/codec (ES8388) - this creates the I2C bus
+    ESP_LOGI(TAG, "Initializing audio board");
+    s_board_handle = audio_board_init();
+    audio_hal_set_mute(s_board_handle->audio_hal, true); // Start muted until audio plays
 
-    // // Initialize audio board/codec
-    // ESP_LOGI(TAG, "Initializing audio board");
-    // s_board_handle = audio_board_init();
-    // audio_hal_set_mute(s_board_handle->audio_hal, true); // Start muted until audio plays
-    // ws2812_set(s_led, WS2812_BLUE);
+    // Initialize BD37033FV audio processor using the shared I2C bus
+    // The I2C bus was created by audio_board_init() for ES8388
+    i2c_master_bus_handle_t i2c_bus = i2c_bus_get_master_handle(I2C_NUM_0);
+    if (i2c_bus != NULL) {
+        err = bd37033fv_init_with_bus(i2c_bus, BD37033FV_I2C_ADDR_DEFAULT, 100000);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "BD37033FV initialized on shared I2C bus");
+            bd37033fv_test();  // Run test to verify communication
+            // Set default audio processor settings
+            bd37033fv_set_volume(0);      // 0 dB (max)
+            bd37033fv_set_bass(0);        // Flat
+            bd37033fv_set_treble(0);      // Flat
+            bd37033fv_set_input_gain(0);  // 0 dB
+        } else {
+            ESP_LOGW(TAG, "BD37033FV init failed: %s (continuing without it)", esp_err_to_name(err));
+        }
+    } else {
+        ESP_LOGW(TAG, "Could not get I2C bus handle for BD37033FV");
+    }
 
-    // // Initialize Bluetooth and start tasks
-    // bt_audio_init(s_board_handle, s_led, BTAUDIO_VERSION);
-    // bt_audio_start_a2dp();
-    // bt_audio_start_spp();
+    ws2812_set(s_led, WS2812_BLUE);
 
-    // // Initialize Wi-Fi (for Mongoose web server) as a task
-    // // init_spiffs();       // Only needed if using SPIFFS for web server
-    // // init_wifi_ap();
-    // // xTaskCreate(monitorMemory, "monitorMemory", 2048, NULL, 5, NULL);
+    // Initialize Bluetooth and start tasks
+    bt_audio_init(s_board_handle, s_led, BTAUDIO_VERSION);
+    bt_audio_start_a2dp();
+    bt_audio_start_spp();
 
-    // ESP_LOGI(TAG, "BTAudio v%s started", BTAUDIO_VERSION);
+    ESP_LOGI(TAG, "BTAudio v%s started", BTAUDIO_VERSION);
 }
