@@ -6,7 +6,7 @@
       "version": "v0.1.4",
       "date": "2026-02-03",
       "label": "ESP32-DevKitC-VE",
-      "notes": "Breadboard-ready test, excluding BD37033.  Includes RGB LED:\nYellow=Initializing\nBlue=Bluetooth Initialized\nGreen=Connected\nRed=Error",
+      "notes": "Breadboard-ready test, excluding BD37033.  Includes RGB LED: (Yellow=Initializing, Blue=Bluetooth Initialized, Green=Audio Connected, Red=Error)",
       "chipFamily": "ESP32",
       "parts": [
         {
