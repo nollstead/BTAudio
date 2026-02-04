@@ -14,6 +14,7 @@ idf_component_register(
     PRIV_REQUIRES
         audio_sal
         audio_hal
+        bd37033
         esp_dispatcher
         display_service
 )
