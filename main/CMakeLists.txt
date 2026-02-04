@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "bt_audio.c"
         "device_info.c"
     INCLUDE_DIRS
         "" 
