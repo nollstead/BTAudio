@@ -11,6 +11,7 @@ idf_component_register(
     REQUIRES
         driver
         esp_peripherals
+        ads1115
     PRIV_REQUIRES
         audio_sal
         audio_hal

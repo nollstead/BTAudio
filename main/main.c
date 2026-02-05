@@ -22,6 +22,7 @@
 #include "esp_wifi.h"
 #include "freertos/event_groups.h"
 
+#include "ads1115.h"
 #include "audio_hal.h"
 #include "bd37033.h"
 #include "board_def.h"
@@ -58,6 +59,7 @@ static void monitorMemory(void *pvParameters);
 // Unused test functions
 __attribute__((unused)) static void ledTestTask(void *pvParameters);
 __attribute__((unused)) void scan_i2c(void);
+__attribute__((unused)) static void test_ads1115(void);
 
 __attribute__((unused)) static void init_spiffs(void) {
     esp_vfs_spiffs_conf_t conf = {
@@ -214,6 +216,17 @@ __attribute__((unused)) void scan_i2c(void) {
             }
         }
         vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+}
+
+__attribute__((unused)) static void test_ads1115(void) {
+    for (int i = 0; i < 2; i++) {
+        ads1115_handle_t adc = audio_board_get_ads1115(i);
+        if (adc != NULL) {
+            ESP_LOGI(TAG, "ADS1115 #%d: initialized and ready", i + 1);
+        } else {
+            ESP_LOGW(TAG, "ADS1115 #%d: not available", i + 1);
+        }
     }
 }
 

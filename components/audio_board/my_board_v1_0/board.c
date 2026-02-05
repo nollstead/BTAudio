@@ -5,6 +5,7 @@
  */
 
 #include "board.h"
+#include "ads1115.h"
 #include "audio_mem.h"
 #include "bd37033.h"
 #include "driver/i2s.h"
@@ -19,6 +20,8 @@ static const char *TAG = "MY_BOARD";
 
 static audio_board_handle_t board_handle = NULL;
 static bool bd37033_available = false;
+static ads1115_handle_t ads1115_handle_1 = NULL;
+static ads1115_handle_t ads1115_handle_2 = NULL;
 
 audio_board_handle_t audio_board_init(void) {
     if (board_handle) {
@@ -44,6 +47,27 @@ audio_board_handle_t audio_board_init(void) {
         }
     } else {
         ESP_LOGW(TAG, "Could not get I2C bus handle for BD37033");
+    }
+
+    // Initialize ADS1115 ADCs on shared I2C bus
+    if (i2c_bus != NULL) {
+        esp_err_t err = ads1115_init(i2c_bus, ADS1115_ADDR_GND, 100000, &ads1115_handle_1);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "ADS1115 #1 initialized at 0x%02X", ADS1115_ADDR_GND);
+        } else {
+            ESP_LOGW(TAG, "ADS1115 #1 init failed: %s (continuing without it)",
+                     esp_err_to_name(err));
+        }
+
+        err = ads1115_init(i2c_bus, ADS1115_ADDR_VDD, 100000, &ads1115_handle_2);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "ADS1115 #2 initialized at 0x%02X", ADS1115_ADDR_VDD);
+        } else {
+            ESP_LOGW(TAG, "ADS1115 #2 init failed: %s (continuing without it)",
+                     esp_err_to_name(err));
+        }
+    } else {
+        ESP_LOGW(TAG, "Could not get I2C bus handle for ADS1115");
     }
 
     return board_handle;
@@ -97,6 +121,14 @@ esp_err_t audio_board_deinit(audio_board_handle_t audio_board) {
     audio_free(audio_board);
     board_handle = NULL;
     return ret;
+}
+
+ads1115_handle_t audio_board_get_ads1115(int index) {
+    if (index == 0)
+        return ads1115_handle_1;
+    if (index == 1)
+        return ads1115_handle_2;
+    return NULL;
 }
 
 // ===== Optional / stubbed features =====
