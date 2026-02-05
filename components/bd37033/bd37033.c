@@ -123,14 +123,17 @@ esp_err_t bd37033_setup_defaults(void) {
     esp_err_t err = ESP_OK;
 
     // INITIAL_SETUP (0x01): 0x24 = 0b00100100
-    // Enables advanced switch (reduces pop/click noise)
+    // D7=0: Advanced Switch ON, D6=0: Anti Alias Filter ON
+    // D5-D4=10: Switch time, D3=0/D2=1: fixed, D1-D0=00: Mute time
     err |= bd37033_write_reg(BD37033_INITIAL_SETUP, 0x24);
 
     // LPF_SETUP (0x02): Subwoofer LPF off, flat response
     err |= bd37033_write_reg(BD37033_LPF_SETUP, 0x00);
 
-    // MIXING_SETUP (0x03): Normal mixing, loudness flat freq
-    err |= bd37033_write_reg(BD37033_MIXING_SETUP, 0x60);
+    // MIXING_SETUP (0x03): 0x61 = 0b01100001
+    // D1-D0=01: A_Single mode (A1→left, A2→right)
+    // Other options: 0x60=Mix(both), 0x62=B_Single(B1-B2)
+    err |= bd37033_write_reg(BD37033_MIXING_SETUP, 0x61);
 
     // INPUT_SELECT (0x05): Select input 1
     err |= bd37033_write_reg(BD37033_INPUT_SELECT, 0x00);
