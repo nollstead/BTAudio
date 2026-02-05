@@ -59,7 +59,7 @@ static void monitorMemory(void *pvParameters);
 // Unused test functions
 __attribute__((unused)) static void ledTestTask(void *pvParameters);
 __attribute__((unused)) void scan_i2c(void);
-__attribute__((unused)) static void test_ads1115(void);
+__attribute__((unused)) static void test_ads1115(void *pvParameters);
 
 __attribute__((unused)) static void init_spiffs(void) {
     esp_vfs_spiffs_conf_t conf = {
@@ -219,14 +219,97 @@ __attribute__((unused)) void scan_i2c(void) {
     }
 }
 
-__attribute__((unused)) static void test_ads1115(void) {
-    for (int i = 0; i < 2; i++) {
-        ads1115_handle_t adc = audio_board_get_ads1115(i);
-        if (adc != NULL) {
-            ESP_LOGI(TAG, "ADS1115 #%d: initialized and ready", i + 1);
-        } else {
-            ESP_LOGW(TAG, "ADS1115 #%d: not available", i + 1);
+__attribute__((unused)) static void test_ads1115(void *pvParameters) {
+    ads1115_handle_t adc1 = audio_board_get_ads1115(0);
+    ads1115_handle_t adc2 = audio_board_get_ads1115(1);
+
+    /* Report availability with I2C addresses */
+    if (adc1) {
+        ESP_LOGI(TAG, "ADS1115 #1 at 0x%02X: ready", ads1115_get_address(adc1));
+    } else {
+        ESP_LOGW(TAG, "ADS1115 #1 (0x48): not available");
+    }
+    if (adc2) {
+        ESP_LOGI(TAG, "ADS1115 #2 at 0x%02X: ready", ads1115_get_address(adc2));
+    } else {
+        ESP_LOGW(TAG, "ADS1115 #2 (0x49): not available");
+    }
+
+    if (!adc1 && !adc2) {
+        ESP_LOGW(TAG, "No ADS1115 devices available, test task exiting");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    /* Configure gain for 3.3V full-scale (optimal for potentiometers on 3.3V supply) */
+    if (adc1)
+        ads1115_set_gain(adc1, ADS1115_GAIN_4_096);
+    if (adc2)
+        ads1115_set_gain(adc2, ADS1115_GAIN_4_096);
+
+    /* Configure data rate - use 128 SPS (default, good balance of speed vs noise) */
+    if (adc1)
+        ads1115_set_rate(adc1, ADS1115_RATE_128);
+    if (adc2)
+        ads1115_set_rate(adc2, ADS1115_RATE_128);
+
+    /*
+     * DIFFERENTIAL READ EXAMPLE (commented out)
+     * Wire: Connect two voltage sources to AIN0 and AIN1
+     * Result will be (AIN0 - AIN1), can be positive or negative
+     */
+    // if (adc1) {
+    //     int16_t diff;
+    //     if (ads1115_read_differential(adc1, ADS1115_MUX_DIFF_0_1, &diff) == ESP_OK) {
+    //         float diff_volts = ads1115_compute_volts(adc1, diff);
+    //         ESP_LOGI(TAG, "Differential A0-A1: %6d (%.3f V)", diff, diff_volts);
+    //     }
+    // }
+
+    /*
+     * COMPARATOR EXAMPLE (commented out)
+     * Wire: Connect ALERT pin to a GPIO for interrupt, or monitor via polling
+     * This example triggers ALERT when voltage exceeds 2.0V
+     *
+     * To calculate threshold counts from voltage:
+     *   counts = voltage / (full_scale / 32768)
+     *   At GAIN_4_096: counts = voltage / 0.000125
+     *   2.0V = 2.0 / 0.000125 = 16000 counts
+     */
+    // if (adc1) {
+    //     /* Set thresholds: low=0, high=16000 (~2.0V at GAIN_4_096) */
+    //     ads1115_set_comparator_thresholds(adc1, 0, 16000);
+    //     /* Configure: traditional mode, active-low, non-latching, assert after 1 conversion */
+    //     ads1115_set_comparator_config(adc1,
+    //                                   ADS1115_COMP_MODE_TRADITIONAL,
+    //                                   ADS1115_COMP_POL_LOW,
+    //                                   ADS1115_COMP_LAT_OFF,
+    //                                   ADS1115_COMP_QUE_1);
+    //     ESP_LOGI(TAG, "Comparator configured: ALERT when > 2.0V");
+    // }
+
+    ESP_LOGI(TAG, "Starting continuous ADC read (500ms interval)");
+
+    while (1) {
+        int16_t raw;
+        float volts;
+
+        /* Single-ended reads on channel 0 */
+        if (adc1) {
+            if (ads1115_read_single_ended(adc1, 0, &raw) == ESP_OK) {
+                volts = ads1115_compute_volts(adc1, raw);
+                ESP_LOGI(TAG, "ADC1 A0: %6d  (%.3f V)", raw, volts);
+            }
         }
+
+        if (adc2) {
+            if (ads1115_read_single_ended(adc2, 0, &raw) == ESP_OK) {
+                volts = ads1115_compute_volts(adc2, raw);
+                ESP_LOGI(TAG, "ADC2 A0: %6d  (%.3f V)", raw, volts);
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
@@ -267,6 +350,9 @@ void app_main(void) {
     bt_audio_init(s_board_handle, s_led, BTAUDIO_VERSION);
     bt_audio_start_a2dp();
     bt_audio_start_spp();
+
+    // ADC Read testing
+    xTaskCreate(test_ads1115, "adc_test", 4096, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "BTAudio v%s started", BTAUDIO_VERSION);
 }
