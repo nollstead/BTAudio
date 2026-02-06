@@ -11,6 +11,8 @@ This directory contains the main application code for BTAudio.
 | `bt_audio.h` | Bluetooth module public API |
 | `device_info.c` | System info helpers (version, uptime, heap) and NVS utilities |
 | `device_info.h` | Device info public API |
+| `adc_manager.c` | Unified 8-channel ADC interface over two ADS1115 chips |
+| `adc_manager.h` | ADC manager public API |
 
 ## Initialization Sequence
 
@@ -69,6 +71,40 @@ device_set_wifi_pass("MyPassword");
 | a2dp | 4096 | 5 | A2DP audio pipeline |
 | spp | 3072 | 5 | SPP command processing |
 | adc_test | 4096 | 5 | ADS1115 test reads (temporary) |
+
+## ADC Manager
+
+Provides a unified 8-channel interface over two ADS1115 chips. Application code reads channels 0-7 without needing to know which physical chip or pin is involved.
+
+### Channel Mapping
+
+| Channel | Chip (Index) | Physical Pin | I2C Address |
+|---------|-------------|-------------|-------------|
+| 0-3 | 0 | A0-A3 | 0x48 |
+| 4-7 | 1 | A0-A3 | 0x49 |
+
+### Usage
+
+```c
+#include "adc_manager.h"
+
+adc_manager_init();  // call after audio_board_init()
+
+// Configure gain per chip (all 4 channels on that chip share the same PGA)
+adc_manager_set_gain(0, ADS1115_GAIN_4_096);  // chip 0 → channels 0-3
+adc_manager_set_gain(1, ADS1115_GAIN_4_096);  // chip 1 → channels 4-7
+
+// Read any channel
+int16_t raw;
+float volts;
+adc_manager_read(5, &raw, &volts);  // routes to chip 1, pin A1
+```
+
+### Per-Chip Settings
+
+Gain and data rate are set by **chip index** (0 or 1), not by channel number. This matches the ADS1115 hardware — one PGA and one data rate per chip, shared across all 4 channels.
+
+If only one chip is present, channels on the missing chip return `ESP_ERR_NOT_FOUND`. Use `adc_manager_channel_available(ch)` to check.
 
 ## TODO
 

@@ -11,4 +11,19 @@ config AUDIO_BOARD_CUSTOM
 
 endchoice
 
+choice CUSTOM_BOARD_VERSION
+    prompt "Custom board version"
+    default CUSTOM_BOARD_V1_0
+    depends on AUDIO_BOARD_CUSTOM
+    help
+        Select your custom board revision
+
+config CUSTOM_BOARD_V1_0
+    bool "My Board v1.0"
+    help
+        Initial board revision with ESP32-WROVER-E-N8R8,
+        ES8388 codec, BD37033 audio processor, and dual ADS1115.
+
+endchoice
+
 endmenu

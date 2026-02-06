@@ -3,6 +3,7 @@ idf_component_register(
         "main.c"
         "bt_audio.c"
         "device_info.c"
+        "adc_manager.c"
     INCLUDE_DIRS
         "" 
     REQUIRES
