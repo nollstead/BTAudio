@@ -38,7 +38,6 @@ typedef enum {
 
 // Module state (set via bt_audio_init)
 static audio_board_handle_t s_board_handle = NULL;
-static ws2812_handle_t s_led = NULL;
 static const char *s_version = "unknown";
 static uint32_t s_spp_handle = 0;
 
@@ -51,9 +50,8 @@ static spp_cmd_t parse_command(const char *cmd);
 static void handle_spp_command(const char *cmd, size_t len);
 static void spp_task(void *pvParameters);
 
-void bt_audio_init(audio_board_handle_t board_handle, ws2812_handle_t led, const char *version) {
+void bt_audio_init(audio_board_handle_t board_handle, const char *version) {
     s_board_handle = board_handle;
-    s_led = led;
     s_version = version;
 
     init_bluetooth_stack();
@@ -87,10 +85,10 @@ static void a2dp_callback(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param) {
         esp_a2d_connection_state_t state = param->conn_stat.state;
         if (state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
             ESP_LOGI(TAG_A2DP, "A2DP connected");
-            ws2812_set(s_led, WS2812_GREEN);
+            audio_board_led_set(WS2812_GREEN);
         } else if (state == ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
             ESP_LOGI(TAG_A2DP, "A2DP disconnected");
-            ws2812_set(s_led, WS2812_BLUE);
+            audio_board_led_set(WS2812_BLUE);
             audio_hal_set_mute(s_board_handle->audio_hal, true);
         }
     } else if (event == ESP_A2D_AUDIO_STATE_EVT) {

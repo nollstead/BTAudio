@@ -12,7 +12,6 @@
 #include "bt_audio.h"
 #include "mongoose.h"
 #include "mongoose_glue.h"
-#include "ws2812.h"
 
 // WiFi/Mongoose includes (for WiFi AP functionality - currently disabled in app_main)
 #include "esp_event.h"
@@ -47,7 +46,6 @@ static EventGroupHandle_t s_wifi_event_group;
 
 // Shared state
 static audio_board_handle_t s_board_handle = NULL;
-static ws2812_handle_t s_led = NULL;
 
 // Forward declarations
 static void init_nvs(void);
@@ -253,9 +251,9 @@ __attribute__((unused)) static void test_ads1115(void *pvParameters) {
 
 __attribute__((unused)) static void ledTestTask(void *pvParameters) {
     while (1) {
-        ws2812_set(s_led, WS2812_YELLOW);
+        audio_board_led_set(WS2812_YELLOW);
         vTaskDelay(pdMS_TO_TICKS(2000));
-        ws2812_set(s_led, WS2812_GREEN);
+        audio_board_led_set(WS2812_GREEN);
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
@@ -265,27 +263,18 @@ void app_main(void) {
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
     esp_log_level_set("A2DP", ESP_LOG_WARN);
 
-    // Initialize LED
-    ESP_LOGI(TAG, "Initializing LED on GPIO%d", BOARD_RGB_LED);
-    esp_err_t err = ws2812_init(BOARD_RGB_LED, &s_led);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "LED init failed: %d", err);
-        return;
-    }
-    ws2812_set(s_led, WS2812_YELLOW);
-
     // Initialize NVS (required for Bluetooth pairing storage)
     init_nvs();
 
-    // Initialize audio board/codec (ES8388 + BD37033)
+    // Initialize audio board (ES8388, BD37033, ADS1115, WS2812 LED)
     ESP_LOGI(TAG, "Initializing audio board");
     s_board_handle = audio_board_init();
     audio_hal_set_mute(s_board_handle->audio_hal, true); // Start muted until audio plays
 
-    ws2812_set(s_led, WS2812_BLUE);
+    audio_board_led_set(WS2812_BLUE);
 
     // Initialize Bluetooth and start tasks
-    bt_audio_init(s_board_handle, s_led, BTAUDIO_VERSION);
+    bt_audio_init(s_board_handle, BTAUDIO_VERSION);
     bt_audio_start_a2dp();
     bt_audio_start_spp();
 

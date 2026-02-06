@@ -110,6 +110,24 @@ esp_err_t adc_manager_set_rate(uint8_t chip, ads1115_rate_t rate);
  */
 ads1115_rate_t adc_manager_get_rate(uint8_t chip);
 
+/**
+ * @brief Enable or disable clamping of negative ADC values to zero.
+ *
+ * When enabled (the default), any negative raw count from the ADS1115 is
+ * replaced with zero before being returned by adc_manager_read().
+ * Disable for diagnostics when you need to see the true signed output.
+ *
+ * @param enabled  true to clamp negatives to zero, false to pass through.
+ */
+void adc_manager_set_clamp(bool enabled);
+
+/**
+ * @brief Get the current clamp setting.
+ *
+ * @return true if negative clamping is enabled.
+ */
+bool adc_manager_get_clamp(void);
+
 #ifdef __cplusplus
 }
 #endif

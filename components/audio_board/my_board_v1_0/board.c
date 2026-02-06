@@ -12,6 +12,7 @@
 #include "es8388.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
+#include "ws2812.h"
 #include <periph_button.h>
 #include <periph_touch.h>
 #include <stdbool.h>
@@ -22,6 +23,7 @@ static audio_board_handle_t board_handle = NULL;
 static bool bd37033_available = false;
 static ads1115_handle_t ads1115_handle_1 = NULL;
 static ads1115_handle_t ads1115_handle_2 = NULL;
+static ws2812_handle_t led_handle = NULL;
 
 audio_board_handle_t audio_board_init(void) {
     if (board_handle) {
@@ -31,6 +33,14 @@ audio_board_handle_t audio_board_init(void) {
     board_handle = (audio_board_handle_t)audio_calloc(1, sizeof(struct audio_board_handle));
     AUDIO_MEM_CHECK(TAG, board_handle, return NULL);
     board_handle->audio_hal = audio_board_codec_init();
+
+    // Initialize WS2812 status LED
+    esp_err_t led_err = ws2812_init(BOARD_RGB_LED, &led_handle);
+    if (led_err == ESP_OK) {
+        ESP_LOGI(TAG, "WS2812 LED initialized on GPIO%d", BOARD_RGB_LED);
+    } else {
+        ESP_LOGW(TAG, "WS2812 LED init failed: %s (continuing without it)", esp_err_to_name(led_err));
+    }
 
     // Initialize BD37033 audio processor using the shared I2C bus
     // The I2C bus was created by audio_hal_init() for ES8388
@@ -131,9 +141,18 @@ ads1115_handle_t audio_board_get_ads1115(int index) {
     return NULL;
 }
 
-// ===== Optional / stubbed features =====
+// ===== LED control =====
 
-// display_service_handle_t audio_board_led_init(void) {
-//     // No LEDs on this board
-//     return NULL;
-// }
+esp_err_t audio_board_led_set(ws2812_color_t color) {
+    if (!led_handle) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ws2812_set(led_handle, color);
+}
+
+esp_err_t audio_board_led_set_rgb(uint8_t red, uint8_t green, uint8_t blue) {
+    if (!led_handle) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ws2812_set_rgb(led_handle, red, green, blue);
+}

@@ -10,7 +10,6 @@ idf_component_register(
         ads1115
         bd37033
         mongoose
-        ws2812
         bt
         bluetooth_service
         audio_pipeline

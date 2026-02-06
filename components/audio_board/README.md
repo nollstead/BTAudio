@@ -1,6 +1,6 @@
 # Audio Board
 
-Custom board definition for ESP-ADF (Espressif Audio Development Framework). This component integrates the ES8388 codec and manages initialization of all audio-related I2C peripherals.
+Custom board definition for ESP-ADF (Espressif Audio Development Framework). This component integrates the ES8388 codec and manages initialization of all board-level peripherals.
 
 ## Overview
 
@@ -8,8 +8,8 @@ The audio_board component provides:
 - Custom board configuration for ESP-ADF (similar to LyraT board definitions)
 - ES8388 codec initialization via audio_hal
 - I2C bus setup and sharing with other components
-- Centralized initialization of BD37033 and ADS1115 devices
-- Board-level accessor functions
+- Centralized initialization of BD37033, ADS1115, and WS2812 LED
+- Board-level accessor functions for peripherals (LED, ADC, etc.)
 
 ## Structure
 
@@ -47,11 +47,17 @@ audio_board/
 | `audio_board_bd37033_available()` | Check if BD37033 is present |
 | `audio_board_get_ads1115(index)` | Get ADS1115 handle (0 or 1) |
 
+### LED Control
+
+| Function | Description |
+|----------|-------------|
+| `audio_board_led_set(color)` | Set status LED to a predefined `ws2812_color_t` color |
+| `audio_board_led_set_rgb(r, g, b)` | Set status LED to a custom RGB color |
+
 ### Utility
 
 | Function | Description |
 |----------|-------------|
-| `audio_board_led_init()` | Initialize status LED display service |
 | `board_codec_reset()` | Hardware reset the codec |
 
 ## Usage
@@ -86,6 +92,10 @@ if (adc) {
     int16_t raw;
     ads1115_read_single_ended(adc, 0, &raw);
 }
+
+// Set status LED color
+audio_board_led_set(WS2812_GREEN);       // Predefined color
+audio_board_led_set_rgb(64, 32, 0);      // Custom RGB
 ```
 
 ## I2C Bus Sharing

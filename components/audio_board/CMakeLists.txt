@@ -12,6 +12,7 @@ idf_component_register(
         driver
         esp_peripherals
         ads1115
+        ws2812
     PRIV_REQUIRES
         audio_sal
         audio_hal

@@ -18,13 +18,12 @@ This directory contains the main application code for BTAudio.
 
 `app_main()` performs the following steps:
 
-1. Initialize WS2812 status LED (yellow = initializing)
-2. Initialize NVS (required for Bluetooth pairing storage)
-3. Initialize audio board (ES8388 codec, BD37033, ADS1115)
-4. Initialize Bluetooth stack
-5. Start A2DP sink task
-6. Start SPP server task
-7. LED turns blue when ready for connection
+1. Initialize NVS (required for Bluetooth pairing storage)
+2. Initialize audio board (ES8388 codec, BD37033, ADS1115, WS2812 LED)
+3. Initialize Bluetooth stack
+4. Start A2DP sink task
+5. Start SPP server task
+6. LED turns blue when ready for connection
 
 ## Bluetooth Module (bt_audio)
 
@@ -33,7 +32,7 @@ This directory contains the main application code for BTAudio.
 Receives audio stream from paired device and outputs via I2S to the ES8388 codec.
 
 ```c
-bt_audio_init(board_handle, led_handle, version_string);
+bt_audio_init(board_handle, version_string);
 bt_audio_start_a2dp();  // Creates A2DP task
 ```
 
@@ -105,6 +104,25 @@ adc_manager_read(5, &raw, &volts);  // routes to chip 1, pin A1
 Gain and data rate are set by **chip index** (0 or 1), not by channel number. This matches the ADS1115 hardware — one PGA and one data rate per chip, shared across all 4 channels.
 
 If only one chip is present, channels on the missing chip return `ESP_ERR_NOT_FOUND`. Use `adc_manager_channel_available(ch)` to check.
+
+### Negative Value Clamping
+
+The ADS1115 is a differential ADC that outputs signed 16-bit values. In single-ended mode, floating or grounded inputs can produce small negative readings due to ground reference offsets. By default, `adc_manager_read()` clamps negative values to zero, which is appropriate for most single-ended sensor applications.
+
+```c
+// Clamping is enabled by default — negative raw/volts values are returned as 0
+adc_manager_read(ch, &raw, &volts);  // raw >= 0, volts >= 0.0
+
+// Disable clamping for diagnostics (see true signed output)
+adc_manager_set_clamp(false);
+adc_manager_read(ch, &raw, &volts);  // raw may be negative
+
+// Re-enable clamping
+adc_manager_set_clamp(true);
+
+// Query current setting
+bool clamping = adc_manager_get_clamp();
+```
 
 ## TODO
 

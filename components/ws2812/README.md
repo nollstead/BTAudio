@@ -9,7 +9,20 @@ Simple driver for WS2812 (NeoPixel) addressable RGB LEDs using the ESP32 RMT per
 - Custom RGB color support
 - Uses RMT peripheral for precise timing
 
-## Initialization
+## Board-Level Usage
+
+In this project, the WS2812 LED is initialized and managed by the `audio_board` component. Application code uses the board-level accessor functions rather than the ws2812 handle directly:
+
+```c
+#include "board.h"
+
+audio_board_led_set(WS2812_GREEN);       // Set predefined color
+audio_board_led_set_rgb(64, 32, 0);      // Set custom RGB color
+```
+
+## Standalone Initialization
+
+The ws2812 component can also be used independently with its handle-based API:
 
 ```c
 #include "ws2812.h"

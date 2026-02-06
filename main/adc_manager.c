@@ -6,6 +6,7 @@ static const char *TAG = "ADC_MGR";
 
 static ads1115_handle_t chips[ADC_CHIP_COUNT] = {NULL};
 static bool initialized = false;
+static bool clamp_negative = true;
 
 esp_err_t adc_manager_init(void) {
     chips[0] = audio_board_get_ads1115(0);
@@ -53,6 +54,9 @@ esp_err_t adc_manager_read(uint8_t channel, int16_t *raw, float *volts) {
     esp_err_t err = ads1115_read_single_ended(chips[chip_idx], pin, &counts);
     if (err != ESP_OK)
         return err;
+
+    if (clamp_negative && counts < 0)
+        counts = 0;
 
     if (raw)
         *raw = counts;
@@ -111,4 +115,13 @@ ads1115_rate_t adc_manager_get_rate(uint8_t chip) {
     if (!initialized || chip >= ADC_CHIP_COUNT || !chips[chip])
         return ADS1115_RATE_128;
     return ads1115_get_rate(chips[chip]);
+}
+
+void adc_manager_set_clamp(bool enabled) {
+    clamp_negative = enabled;
+    ESP_LOGI(TAG, "Negative value clamping %s", enabled ? "enabled" : "disabled");
+}
+
+bool adc_manager_get_clamp(void) {
+    return clamp_negative;
 }
