@@ -10,7 +10,7 @@ BTAudio is a custom Bluetooth audio adapter built on the ESP32 platform using Es
 
 | Component | Chip | Function |
 |-----------|------|----------|
-| MCU | ESP32-S3 | Main controller, Bluetooth, WiFi |
+| MCU | ESP32-WROVER-E-N8R8 | Main controller, Bluetooth, WiFi (8MB flash, 8MB PSRAM) |
 | Codec | ES8388 | I2S DAC/ADC, analog output |
 | Audio Processor | BD37033FV | Volume, EQ, fader/balance |
 | ADC | ADS1115 (x2) | Read analog controls (pots, sensors) |
@@ -38,11 +38,11 @@ Bluetooth A2DP --> ESP32 I2S --> ES8388 DAC --> BD37033 --> Speakers/Headphones
 
 ```
 BTAudio/
-├── main/
-│   ├── main.c              # Application entry point
-│   ├── bt_audio.c          # Bluetooth A2DP and SPP handling
-│   └── ...
-├── components/
+├── main/                   # Application code
+│   ├── main.c              # Entry point, initialization
+│   ├── bt_audio.c/.h       # Bluetooth A2DP and SPP
+│   └── device_info.c/.h    # System info and NVS helpers
+├── components/             # Custom ESP-IDF components
 │   ├── ads1115/            # 16-bit ADC driver
 │   ├── audio_board/        # Custom ESP-ADF board definition
 │   ├── bd37033/            # Audio processor driver
@@ -52,7 +52,8 @@ BTAudio/
 └── README.md               # This file
 ```
 
-See [components/README.md](components/README.md) for detailed component documentation.
+See [main/README.md](main/README.md) for application code details.
+See [components/README.md](components/README.md) for component documentation.
 
 ## Build & Flash
 
@@ -87,27 +88,26 @@ In `menuconfig`:
 
 | Signal | GPIO | Notes |
 |--------|------|-------|
-| SDA | <!-- TODO --> | Shared by ES8388, BD37033, ADS1115 |
-| SCL | <!-- TODO --> | |
+| SDA | 18 | Shared by ES8388, BD37033, ADS1115 |
+| SCL | 23 | |
 
 ### I2S (to ES8388)
 
 | Signal | GPIO |
 |--------|------|
-| MCLK | <!-- TODO --> |
-| BCLK | <!-- TODO --> |
-| WS | <!-- TODO --> |
-| DOUT | <!-- TODO --> |
-| DIN | <!-- TODO --> |
+| MCLK | 0 |
+| BCLK | 5 |
+| WS (LRCLK) | 25 |
+| DOUT | 26 |
+| DIN | 19 |
 
 ### Other
 
 | Signal | GPIO | Notes |
 |--------|------|-------|
-| RGB LED | <!-- TODO --> | WS2812 data line |
-| Codec Reset | <!-- TODO --> | ES8388 reset (active low) |
-
-<!-- TODO: Complete GPIO assignments from board_pins_config.h -->
+| RGB LED | 2 | WS2812 data line |
+| PA Enable | 21 | Power amplifier enable |
+| AUX Detect | 12 | Auxiliary input detection |
 
 ## Usage
 
@@ -163,7 +163,7 @@ Version is stored in `version.txt` and embedded at build time via CMake. The ver
 
 <!-- High-level project TODOs - update as needed -->
 
-- [ ] Complete GPIO pin documentation
+- [x] Complete GPIO pin documentation
 - [ ] Document SPP command protocol
 - [ ] Enable and test WiFi AP mode
 - [ ] Implement volume control via ADS1115 pots
